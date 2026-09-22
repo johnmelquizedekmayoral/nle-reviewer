@@ -1180,6 +1180,9 @@ label.quiz-choice:hover { border-color: #9aabb5; background: var(--surface-muted
 .workspace-stage { min-width: 0; }
 .workspace-panel { width: 100%; min-height: 100vh; padding: 36px clamp(22px, 4vw, 58px) 60px; }
 .workspace-toast { position: fixed; z-index: 200; top: 18px; right: 18px; max-width: min(390px, calc(100vw - 36px)); padding: 12px 16px; border: 1px solid #294252; border-radius: 12px; background: var(--nav); color: white; box-shadow: 0 18px 45px rgb(0 0 0 / 22%); font-size: .82rem; font-weight: 700; }
+.panel-error-details { max-width: 760px; margin-top: 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--muted); }
+.panel-error-details summary { cursor: pointer; font-weight: 750; }
+.panel-error-details code { display: block; margin-top: 10px; overflow-wrap: anywhere; color: var(--error-ink); white-space: pre-wrap; }
 .sync-badge { padding: 9px 12px; border-radius: 999px; background: var(--surface-muted); color: var(--muted); font-size: .75rem; font-weight: 800; }
 .mobile-menu-button, .drawer-backdrop { display: none; }
 .skeleton-grid { margin-top: 26px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }

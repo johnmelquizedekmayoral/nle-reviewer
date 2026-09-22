@@ -16,6 +16,7 @@ export default async function WorkspacePage() {
     <WorkspaceApp
       userId={userId}
       role={role}
+      roleCheckedAt={new Date().toISOString()}
       initialName={profile?.display_name ?? "Learner"}
       initialPreferences={{
         theme: preferences?.theme ?? "system",

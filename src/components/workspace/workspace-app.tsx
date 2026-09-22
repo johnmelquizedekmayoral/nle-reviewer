@@ -6,7 +6,7 @@ import { OfflineQuiz } from "@/components/workspace/offline-quiz";
 import { QuestionManagerPanel } from "@/components/workspace/question-manager-panel";
 import { PanelErrorBoundary } from "@/components/workspace/panel-error-boundary";
 import { clearLocalWorkspace, deleteLocal, quizKey, readLocal, workspaceKey, writeLocal } from "@/lib/offline/db";
-import type { LocalAttempt, LocalHistoryItem, LocalPreferences, OfflineQuizPack, UserRole, WorkspaceSnapshot } from "@/lib/offline/types";
+import type { LocalAttempt, LocalCategory, LocalChoice, LocalHistoryItem, LocalPreferences, LocalQuestion, OfflineQuizPack, UserRole, WorkspaceSnapshot } from "@/lib/offline/types";
 import { createClient } from "@/lib/supabase/client";
 import { saveWorkspaceSettings } from "@/app/workspace/actions";
 
@@ -15,25 +15,56 @@ type InitialPreferences = Omit<LocalPreferences, "user_id">;
 
 const themes = ["system", "light", "dark", "midnight", "ocean", "forest", "warm", "retro", "terminal", "synthwave"];
 const accents = ["green", "blue", "purple", "teal", "orange", "pink", "red"];
+const userRoles: UserRole[] = ["learner", "instructor", "admin", "superadmin"];
 
 async function uploadOfflinePack(pack: OfflineQuizPack) {
   return createClient().rpc("sync_offline_quiz_attempt", { p_attempt_id: pack.attempt.id, p_answers: pack.answers ?? [] });
 }
 
 function normalizeSnapshot(value: WorkspaceSnapshot): WorkspaceSnapshot {
+  const categories = (Array.isArray(value.categories) ? value.categories : []).flatMap((category) => {
+    if (!category || typeof category.id !== "string") return [];
+    const name = typeof category.name === "string" ? category.name : "Untitled category";
+    return [{
+      ...category,
+      parent_id: typeof category.parent_id === "string" ? category.parent_id : null,
+      name,
+      kind: ["subject", "topic", "subtopic", "folder"].includes(category.kind) ? category.kind : "folder",
+      path: typeof category.path === "string" ? category.path : name,
+    } as LocalCategory];
+  });
+  const questions = (Array.isArray(value.questions) ? value.questions : []).flatMap((question) => {
+    if (!question || typeof question.id !== "string" || typeof question.question_text !== "string") return [];
+    const choices = (Array.isArray(question.choices) ? question.choices : []).flatMap((choice) => {
+      if (!choice || typeof choice.id !== "string") return [];
+      return [{
+        ...choice,
+        label: String(choice.label ?? ""),
+        choice_text: String(choice.choice_text ?? ""),
+      } as LocalChoice];
+    });
+    return [{
+      ...question,
+      category_id: typeof question.category_id === "string" ? question.category_id : "",
+      explanation: typeof question.explanation === "string" ? question.explanation : "",
+      source: typeof question.source === "string" ? question.source : null,
+      status: ["draft", "published", "archived"].includes(question.status) ? question.status : "draft",
+      choices,
+    } as LocalQuestion];
+  });
   return {
     ...value,
-    categories: Array.isArray(value.categories) ? value.categories : [],
+    categories,
     quiz_categories: Array.isArray(value.quiz_categories) ? value.quiz_categories : [],
     attempts: Array.isArray(value.attempts) ? value.attempts : [],
     history_items: Array.isArray(value.history_items) ? value.history_items : [],
     topic_strengths: Array.isArray(value.topic_strengths) ? value.topic_strengths : [],
-    questions: Array.isArray(value.questions) ? value.questions : [],
+    questions,
     users: Array.isArray(value.users) ? value.users : [],
   };
 }
 
-export function WorkspaceApp({ userId, role, initialName, initialPreferences }: { userId: string; role: UserRole; initialName: string; initialPreferences: InitialPreferences }) {
+export function WorkspaceApp({ userId, role, roleCheckedAt, initialName, initialPreferences }: { userId: string; role: UserRole; roleCheckedAt: string; initialName: string; initialPreferences: InitialPreferences }) {
   const [panel, setPanel] = useState<Panel>("dashboard");
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null);
   const [activeQuiz, setActiveQuiz] = useState<OfflineQuizPack | null>(null);
@@ -43,8 +74,11 @@ export function WorkspaceApp({ userId, role, initialName, initialPreferences }: 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const cacheKey = workspaceKey(userId);
-  const canManageQuestions = role !== "learner";
-  const canManageUsers = role === "admin" || role === "superadmin";
+  const snapshotRole = snapshot?.profile?.role;
+  const snapshotRoleIsNewer = Boolean(snapshotRole && userRoles.includes(snapshotRole)) && Date.parse(snapshot?.synced_at ?? "") >= Date.parse(roleCheckedAt);
+  const effectiveRole: UserRole = snapshotRoleIsNewer && snapshotRole ? snapshotRole : role;
+  const canManageQuestions = effectiveRole !== "learner";
+  const canManageUsers = effectiveRole === "admin" || effectiveRole === "superadmin";
   const router = useRouter();
 
   const refresh = useCallback(async (silent = false, includeBank = true) => {
@@ -165,7 +199,7 @@ export function WorkspaceApp({ userId, role, initialName, initialPreferences }: 
         {snapshot && panel === "quiz" ? <QuizPanel snapshot={snapshot} preferences={preferences} online={online} result={resultQuiz} onStart={async (pack) => { setResultQuiz(null); setActiveQuiz(pack); await writeLocal(quizKey(pack.attempt.id), pack); await writeLocal(`active-quiz:${userId}`, pack.attempt.id); }} /> : null}
         {snapshot && panel === "history" ? <HistoryPanel snapshot={snapshot} /> : null}
         {snapshot && panel === "questions" && canManageQuestions ? <PanelErrorBoundary title="Question Manager"><QuestionManagerPanel categories={snapshot.categories} questions={snapshot.questions} onRefresh={() => refresh(true)} /></PanelErrorBoundary> : null}
-        {snapshot && panel === "users" && canManageUsers ? <UsersPanel snapshot={snapshot} role={role} onRefresh={() => refresh(true, false)} /> : null}
+        {snapshot && panel === "users" && canManageUsers ? <UsersPanel snapshot={snapshot} role={effectiveRole} currentUserId={userId} onRefresh={() => refresh(true, false)} /> : null}
         {snapshot && panel === "settings" ? <SettingsPanel name={name} preferences={preferences} onSaved={() => refresh(true, false)} /> : null}
       </div>
     </div>
@@ -255,8 +289,12 @@ function SettingsPanel({ name, preferences, onSaved }: { name: string; preferenc
   return <main className="workspace-panel"><header><p className="eyebrow">Live preview</p><h1>Settings</h1><p className="page-description">Changes preview immediately on this device. Nothing is sent until you select Save.</p></header><form className="settings-form" onSubmit={save}><section className="form-card settings-section"><label className="field">Display name<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label><h2>Theme</h2><div className="settings-options theme-options">{themes.map((theme) => <label className="setting-choice" key={theme}><input type="radio" name="theme" checked={draft.theme === theme} onChange={() => setDraft({ ...draft, theme })} /><span className={`theme-preview ${theme}`}><i /><i /><i /></span><span>{theme}</span></label>)}</div><h2>Accent</h2><div className="settings-options accent-options">{accents.map((accent) => <label className="setting-choice" key={accent}><input type="radio" name="accent" checked={draft.accent_color === accent} onChange={() => setDraft({ ...draft, accent_color: accent })} /><span className={`accent-swatch ${accent}`} />{accent}</label>)}</div><label className="field">Text size<select value={draft.font_scale} onChange={(event) => setDraft({ ...draft, font_scale: Number(event.target.value) })}><option value="0.9">Small</option><option value="1">Default</option><option value="1.1">Large</option><option value="1.2">Extra large</option></select></label><label className="settings-toggle"><input type="checkbox" checked={draft.reduced_motion} onChange={(event) => setDraft({ ...draft, reduced_motion: event.target.checked })} /><span><strong>Reduce motion</strong><small>Turns off most transitions.</small></span></label><label className="field">Default quiz size<input type="number" min={5} max={100} value={draft.default_quiz_size} onChange={(event) => setDraft({ ...draft, default_quiz_size: Number(event.target.value) })} /></label><button className="button" type="submit" disabled={busy}>{busy ? "Saving…" : "Save settings"}</button>{message ? <p className="notice">{message}</p> : null}</section></form></main>;
 }
 
-function UsersPanel({ snapshot, role, onRefresh }: { snapshot: WorkspaceSnapshot; role: UserRole; onRefresh: () => Promise<void> }) {
+function UsersPanel({ snapshot, role, currentUserId, onRefresh }: { snapshot: WorkspaceSnapshot; role: UserRole; currentUserId: string; onRefresh: () => Promise<void> }) {
   const [busyId, setBusyId] = useState<string | null>(null); const [message, setMessage] = useState<string | null>(null);
   async function change(userId: string, action: "role" | "approval", value: string | boolean) { setBusyId(userId); const supabase = createClient(); const result = action === "role" ? await supabase.rpc("set_user_role", { p_user_id: userId, p_role: value }) : await supabase.rpc("set_user_approval", { p_user_id: userId, p_is_approved: value }); setMessage(result.error?.message ?? "User updated."); if (!result.error) await onRefresh(); setBusyId(null); }
-  return <main className="workspace-panel"><header><p className="eyebrow">Administrator only</p><h1>Users &amp; roles</h1></header>{message ? <p className="notice">{message}</p> : null}<section className="user-list">{snapshot.users.map((user) => <article className="user-row" key={user.user_id}><div className="user-identity"><span className="user-avatar">{user.display_name.slice(0, 1).toUpperCase()}</span><div><strong>{user.display_name}</strong><p>{user.email}</p></div></div><span className={`role-badge role-${user.role}`}>{user.role}</span><div className="user-actions"><select value={user.role} disabled={busyId === user.user_id || (role === "admin" && ["admin", "superadmin"].includes(user.role))} onChange={(event) => change(user.user_id, "role", event.target.value)}><option value="learner">learner</option><option value="instructor">instructor</option>{role === "superadmin" ? <><option value="admin">admin</option><option value="superadmin">superadmin</option></> : null}</select><button type="button" disabled={busyId === user.user_id} onClick={() => change(user.user_id, "approval", !user.is_approved)}>{user.is_approved ? "Revoke access" : "Approve"}</button></div></article>)}</section></main>;
+  return <main className="workspace-panel"><header><p className="eyebrow">Administrator only</p><h1>Users &amp; roles</h1></header>{message ? <p className="notice">{message}</p> : null}<section className="user-list">{snapshot.users.map((user) => {
+    const displayedRole = user.user_id === currentUserId ? role : user.role;
+    const isCurrentUser = user.user_id === currentUserId;
+    return <article className="user-row" key={user.user_id}><div className="user-identity"><span className="user-avatar">{user.display_name.slice(0, 1).toUpperCase()}</span><div><strong>{user.display_name}{isCurrentUser ? " (you)" : ""}</strong><p>{user.email}</p></div></div><span className={`role-badge role-${displayedRole}`}>{displayedRole}</span><div className="user-actions"><select value={displayedRole} disabled={isCurrentUser || busyId === user.user_id || (role === "admin" && ["admin", "superadmin"].includes(displayedRole))} onChange={(event) => change(user.user_id, "role", event.target.value)}><option value="learner">learner</option><option value="instructor">instructor</option>{role === "superadmin" || displayedRole === "admin" ? <option value="admin">admin</option> : null}{role === "superadmin" || displayedRole === "superadmin" ? <option value="superadmin">superadmin</option> : null}</select><button type="button" disabled={isCurrentUser || busyId === user.user_id} onClick={() => change(user.user_id, "approval", !user.is_approved)}>{user.is_approved ? "Revoke access" : "Approve"}</button></div></article>;
+  })}</section></main>;
 }

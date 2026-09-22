@@ -96,7 +96,7 @@ export function QuestionManagerPanel({ categories, questions, onRefresh }: Props
   }
 
   const categoryOptions = [...categories].sort((a, b) => a.path.localeCompare(b.path));
-  const editChoices = new Map(editing?.choices.map((choice) => [choice.label, choice]) ?? []);
+  const editChoices = new Map((Array.isArray(editing?.choices) ? editing.choices : []).map((choice) => [choice.label, choice]));
 
   return (
     <main className="workspace-panel question-workspace">

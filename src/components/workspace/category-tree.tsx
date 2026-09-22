@@ -27,9 +27,11 @@ export function CategoryTree({ categories, selectedId, onSelect }: Props) {
     });
   }
 
-  function render(parentId: string | null, depth = 0): ReactNode {
+  function render(parentId: string | null, depth = 0, ancestors = new Set<string>()): ReactNode {
     return (children.get(parentId) ?? []).map((category) => {
+      if (ancestors.has(category.id)) return null;
       const hasChildren = (children.get(category.id)?.length ?? 0) > 0;
+      const nextAncestors = new Set(ancestors).add(category.id);
       return (
         <div key={category.id}>
           <div className={`tree-row ${selectedId === category.id ? "active" : ""}`} style={{ paddingLeft: 8 + depth * 15 }}>
@@ -38,7 +40,7 @@ export function CategoryTree({ categories, selectedId, onSelect }: Props) {
             </button>
             <button className="tree-name" type="button" onClick={() => onSelect(category.id)}>{category.name}</button>
           </div>
-          {hasChildren && open.has(category.id) ? render(category.id, depth + 1) : null}
+          {hasChildren && open.has(category.id) ? render(category.id, depth + 1, nextAncestors) : null}
         </div>
       );
     });
