@@ -1,31 +1,39 @@
-# NLE Reviewer v11 — quiz lock, bulk move, and category manager
+# NLE Reviewer v12 update
 
-## Required installation order
+This focused update adds the complete left-side Category Manager and the full
+post-quiz answer review.
 
-1. Extract this folder into the root of the current `nle-reviewer` project and overwrite the matching files.
-2. In Supabase SQL Editor, run `supabase/migrations/0009_quiz_session_lock.sql` once.
-3. Run `npm run lint` and `npm run build` locally.
-4. Commit and push the files to GitHub. Vercel will deploy the commit.
-5. Reload the deployed website once.
+## Install
 
-Do not deploy the frontend before running migration `0009`; quiz recovery and explicit quitting depend on its RPC functions.
+1. Extract this ZIP into the root of your `nle-reviewer` project and allow it
+   to overwrite the matching files.
+2. In the Supabase SQL Editor, run
+   `supabase/migrations/0010_category_manager.sql` once. Do this before testing
+   or deploying—the folder buttons require the new database functions.
+3. From the project folder, run:
 
-## Existing unfinished quizzes
+   ```bash
+   npm run lint
+   npm run build
+   ```
 
-Open Take a quiz. Every active attempt will have a Resume quiz button. Finish it or use Quit quiz to permanently discard its unfinished progress. Once the older attempts are cleared, the database prevents more than one active quiz from being created.
+4. Commit and push the files to GitHub. Vercel will deploy the pushed commit.
+5. Reload the deployed app once after Vercel finishes.
 
-## Included fixes
+## Category Manager
 
-- Exact-question local recovery after accidental reloads or leaving the site.
-- No Save & exit; only a confirmed Quit quiz that discards progress.
-- Active quiz UI hides workspace navigation and warns before browser navigation.
-- Filter-aware Select all in Question Manager.
-- Controlled Move to destination with a separate Move button.
-- Tree-based Category Manager for root folders and nested subfolders.
+- The folder tree and all controls are together in the left Categories panel.
+- Use **New root** to add another top-level folder.
+- Select a folder, then use **New subfolder** to create inside it.
+- A selected folder can be renamed or moved to the root/another folder.
+- **Move folder tree** moves the folder and every descendant together.
+- **Delete folder tree** archives the branch and all contained questions. It
+  does not damage previous quiz history or saved answer snapshots.
+- Circular moves are blocked, and a folder's descendants are excluded from its
+  destination list.
 
-## Verification
+## Quiz results
 
-- ESLint passed.
-- TypeScript passed.
-- Next.js production build passed.
-- Production runtime endpoint smoke test passed.
+After submitting a quiz, the result screen shows the score summary and every
+question. Use **All**, **Correct**, and **Wrong** to filter the review, then use
+**Back to dashboard** when finished.

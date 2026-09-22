@@ -153,6 +153,21 @@ Question Manager now includes Select all for the current filtered results, a con
 Move-to-category action with a separate confirmation button, and a tree-based Category
 Manager for adding root folders and nested subfolders.
 
+## v12 left category-tree fix
+
+Run `supabase/migrations/0010_category_manager.sql` once before deploying this
+version. Category Manager now sits directly beneath the expandable Categories tree
+on the left. Folder creation uses a dedicated staff-only RPC and displays success or
+error feedback beside the form. Selecting All questions creates a root folder;
+selecting an existing folder creates a nested subfolder inside it.
+Select any folder to rename it, move its complete branch to the root or another
+folder, or safely delete the branch. Deletion archives contained questions so
+past quiz results and database references remain intact.
+
+The immediate quiz result screen now includes the complete question review with the
+same All, Correct, and Wrong filters used in Quiz History, plus a Back to dashboard
+action after reviewing the completed attempt.
+
 ## Deploy to Vercel
 
 1. Import the `johnmelquizedekmayoral/nle-reviewer` GitHub repository in Vercel.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { OfflineQuiz } from "@/components/workspace/offline-quiz";
 import { QuestionManagerPanel } from "@/components/workspace/question-manager-panel";
@@ -19,6 +19,14 @@ const userRoles: UserRole[] = ["learner", "instructor", "admin", "superadmin"];
 
 async function uploadOfflinePack(pack: OfflineQuizPack) {
   return createClient().rpc("sync_offline_quiz_attempt", { p_attempt_id: pack.attempt.id, p_answers: pack.answers ?? [] });
+}
+
+function buildReviewItems(pack: OfflineQuizPack): LocalHistoryItem[] {
+  const answers = pack.answers ?? [];
+  return pack.items.map((item) => {
+    const answer = answers.find((candidate) => candidate.item_id === item.id);
+    return { id: item.id, attempt_id: pack.attempt.id, question_id: item.question_id, position: item.position, question_snapshot: { question_text: item.question_text }, choices_snapshot: item.choices, correct_choice_ids: item.correct_choice_ids, selected_choice_ids: answer ? [answer.selected_choice_id] : [], explanation_snapshot: item.explanation, is_correct: Boolean(answer && item.correct_choice_ids.includes(answer.selected_choice_id)), response_time_ms: answer?.response_time_ms ?? 0 };
+  });
 }
 
 const abandonQueueKey = (userId: string) => `abandoned-quizzes:${userId}`;
@@ -185,10 +193,7 @@ export function WorkspaceApp({ userId, role, roleCheckedAt, initialName, initial
     const answers = pack.answers ?? [];
     const correct = answers.filter((answer) => pack.items.find((item) => item.id === answer.item_id)?.correct_choice_ids.includes(answer.selected_choice_id)).length;
     const completedAttempt: LocalAttempt = { ...pack.attempt, status: "submitted", answered_count: answers.length, correct_count: correct, score_percent: answers.length ? correct * 100 / answers.length : 0, submitted_at: new Date().toISOString(), duration_ms: answers.reduce((sum, answer) => sum + answer.response_time_ms, 0) };
-    const items: LocalHistoryItem[] = pack.items.map((item) => {
-      const answer = answers.find((candidate) => candidate.item_id === item.id);
-      return { id: item.id, attempt_id: pack.attempt.id, question_id: item.question_id, position: item.position, question_snapshot: { question_text: item.question_text }, choices_snapshot: item.choices, correct_choice_ids: item.correct_choice_ids, selected_choice_ids: answer ? [answer.selected_choice_id] : [], explanation_snapshot: item.explanation, is_correct: Boolean(answer && item.correct_choice_ids.includes(answer.selected_choice_id)), response_time_ms: answer?.response_time_ms ?? 0 };
-    });
+    const items = buildReviewItems(pack);
     if (snapshot) {
       const next = { ...snapshot, attempts: [completedAttempt, ...snapshot.attempts.filter((attempt) => attempt.id !== pack.attempt.id)], history_items: [...snapshot.history_items.filter((item) => item.attempt_id !== pack.attempt.id), ...items] };
       setSnapshot(next); await writeLocal(cacheKey, next);
@@ -271,7 +276,7 @@ export function WorkspaceApp({ userId, role, roleCheckedAt, initialName, initial
         {notice ? <div className="workspace-toast" role="status">{notice}</div> : null}
         {!snapshot ? <WorkspaceSkeleton online={online} /> : null}
         {snapshot && panel === "dashboard" ? <DashboardPanel snapshot={snapshot} name={name} onQuiz={() => choosePanel("quiz")} /> : null}
-        {snapshot && panel === "quiz" ? <QuizPanel snapshot={snapshot} preferences={preferences} online={online} result={resultQuiz} onStart={activateQuiz} onResume={resumeQuiz} /> : null}
+        {snapshot && panel === "quiz" ? <QuizPanel snapshot={snapshot} preferences={preferences} online={online} result={resultQuiz} onStart={activateQuiz} onResume={resumeQuiz} onExitResults={() => { setResultQuiz(null); choosePanel("dashboard"); }} /> : null}
         {snapshot && panel === "history" ? <HistoryPanel snapshot={snapshot} /> : null}
         {snapshot && panel === "questions" && canManageQuestions ? <PanelErrorBoundary title="Question Manager"><QuestionManagerPanel categories={snapshot.categories} questions={snapshot.questions} onRefresh={() => refresh(true)} /></PanelErrorBoundary> : null}
         {snapshot && panel === "users" && canManageUsers ? <UsersPanel snapshot={snapshot} role={effectiveRole} currentUserId={userId} onRefresh={() => refresh(true, false)} /> : null}
@@ -338,11 +343,15 @@ function ActivityHeatmap({ attempts }: { attempts: LocalAttempt[] }) {
   return <div className="activity-heatmap"><div className="section-head"><h2>Study activity</h2><span className="muted">35 days</span></div><div className="heatmap-grid">{days.map((day) => <span className={`heat-${Math.min(day.count, 4)}`} title={`${day.label}: ${day.count} quiz${day.count === 1 ? "" : "zes"}`} aria-label={`${day.label}: ${day.count} quizzes`} key={day.key} />)}</div><small>Less <i className="heat-1" /><i className="heat-2" /><i className="heat-3" /><i className="heat-4" /> More</small></div>;
 }
 
-function QuizPanel({ snapshot, preferences, online, result, onStart, onResume }: { snapshot: WorkspaceSnapshot; preferences: LocalPreferences; online: boolean; result: OfflineQuizPack | null; onStart: (pack: OfflineQuizPack) => Promise<void>; onResume: (attemptId: string) => Promise<void> }) {
+type ReviewFilter = "all" | "correct" | "wrong";
+
+function QuizPanel({ snapshot, preferences, online, result, onStart, onResume, onExitResults }: { snapshot: WorkspaceSnapshot; preferences: LocalPreferences; online: boolean; result: OfflineQuizPack | null; onStart: (pack: OfflineQuizPack) => Promise<void>; onResume: (attemptId: string) => Promise<void>; onExitResults: () => void }) {
   const [busy, setBusy] = useState(false);
   const [resumeBusyId, setResumeBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resultFilter, setResultFilter] = useState<ReviewFilter>("all");
   const unfinished = snapshot.attempts.filter((attempt) => attempt.status === "active");
+  const resultItems = useMemo(() => result ? buildReviewItems(result) : [], [result]);
   async function start(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!online) { setError("Connect to download a new quiz. A downloaded quiz can then run fully offline."); return; }
     setBusy(true); setError(null); const form = new FormData(event.currentTarget);
@@ -359,13 +368,33 @@ function QuizPanel({ snapshot, preferences, online, result, onStart, onResume }:
     catch (resumeError) { setError(resumeError instanceof Error ? resumeError.message : "The unfinished quiz could not be recovered."); }
     finally { setResumeBusyId(null); }
   }
-  if (result) { const answers = result.answers ?? []; const correct = answers.filter((answer) => result.items.find((item) => item.id === answer.item_id)?.correct_choice_ids.includes(answer.selected_choice_id)).length; return <main className="workspace-panel"><article className="quiz-result-card"><p className="eyebrow">Results saved locally</p><h1>{Math.round(correct * 100 / Math.max(answers.length, 1))}%</h1><p>{correct} of {answers.length} correct</p><p className="muted">The result is uploading in the background when online.</p></article></main>; }
+  if (result) {
+    const correct = resultItems.filter((item) => item.is_correct).length;
+    const wrong = resultItems.length - correct;
+    const score = Math.round(correct * 100 / Math.max(resultItems.length, 1));
+    const filteredItems = filterReviewItems(resultItems, resultFilter);
+    return <main className="workspace-panel quiz-results-panel"><header className="topbar"><div><p className="eyebrow">Results saved locally</p><h1>{result.attempt.title ?? "Quiz results"}</h1><p className="page-description">Review every answer and explanation below. The completed result syncs automatically when online.</p></div><button className="button" type="button" onClick={onExitResults}>Back to dashboard</button></header><section className="quiz-result-overview"><div className="quiz-result-score"><strong>{score}%</strong><span>Final score</span></div><div><strong>{resultItems.length}</strong><span>Answered</span></div><div className="correct"><strong>{correct}</strong><span>Correct</span></div><div className="wrong"><strong>{wrong}</strong><span>Wrong</span></div></section><ReviewFilterTabs items={resultItems} filter={resultFilter} onChange={setResultFilter} /><ReviewQuestionList items={filteredItems} /></main>;
+  }
   return <main className="workspace-panel"><header><p className="eyebrow">Download once, answer locally</p><h1>{unfinished.length ? "Resume your quiz" : "Start a quiz"}</h1><p className="page-description">An unfinished quiz locks the quiz session until you finish it or explicitly quit and discard its progress.</p></header>{error ? <p className="notice notice-error">{error}</p> : null}{unfinished.length ? <section className="unfinished-quiz-list" aria-label="Unfinished quizzes">{unfinished.map((attempt) => <article className="unfinished-quiz-card" key={attempt.id}><div><strong>{attempt.title ?? "Quiz"}</strong><p>Started {new Date(attempt.started_at).toLocaleString()} · {attempt.total_questions} questions</p></div><button className="button" type="button" disabled={resumeBusyId !== null} onClick={() => resume(attempt.id)}>{resumeBusyId === attempt.id ? "Recovering…" : "Resume quiz"}</button></article>)}</section> : <article className="form-card quiz-setup-card"><form className="manager-form" onSubmit={start}><label className="field">Category<select name="category_id" defaultValue="" required><option value="" disabled>Select a topic</option>{snapshot.quiz_categories.map((category) => <option key={category.category_id} value={category.category_id}>{category.category_path} — {category.question_count}</option>)}</select></label><label className="field">Questions<input name="question_count" type="number" min={1} max={100} defaultValue={preferences.default_quiz_size} required /></label><button className="button" type="submit" disabled={busy || !online}>{busy ? "Downloading quiz…" : online ? "Download and begin" : "Connect to start"}</button></form></article>}</main>;
 }
 
+function filterReviewItems(items: LocalHistoryItem[], filter: ReviewFilter) {
+  return items.filter((item) => filter === "all" || (filter === "correct" ? item.is_correct : !item.is_correct));
+}
+
+function ReviewFilterTabs({ items, filter, onChange }: { items: LocalHistoryItem[]; filter: ReviewFilter; onChange: (filter: ReviewFilter) => void }) {
+  const correct = items.filter((item) => item.is_correct).length;
+  const counts: Record<ReviewFilter, number> = { all: items.length, correct, wrong: items.length - correct };
+  return <div className="review-filters" aria-label="Filter reviewed answers">{(["all", "correct", "wrong"] as const).map((value) => <button type="button" className={filter === value ? "active" : ""} aria-pressed={filter === value} onClick={() => onChange(value)} key={value}><span>{value}</span><strong>{counts[value]}</strong></button>)}</div>;
+}
+
+function ReviewQuestionList({ items }: { items: LocalHistoryItem[] }) {
+  return <div className="review-list">{items.map((item) => <article className={`review-card ${item.is_correct ? "correct" : "wrong"}`} key={item.id}><div className="review-card-head"><span>Question {item.position}</span><strong>{item.is_correct ? "Correct" : "Wrong"}</strong></div><h2>{item.question_snapshot.question_text}</h2><div className="review-choices">{item.choices_snapshot.map((choice) => <div className={`review-choice ${item.correct_choice_ids.includes(choice.id) ? "correct" : item.selected_choice_ids?.includes(choice.id) ? "wrong" : ""}`} key={choice.id}><span>{choice.label}</span><p>{choice.choice_text}</p></div>)}</div><div className="review-explanation"><strong>Explanation</strong><p>{item.explanation_snapshot || "No explanation was added."}</p></div></article>)}</div>;
+}
+
 function HistoryPanel({ snapshot }: { snapshot: WorkspaceSnapshot }) {
-  const [reviewId, setReviewId] = useState<string | null>(null); const [filter, setFilter] = useState<"all" | "correct" | "wrong">("all");
-  if (reviewId) { const attempt = snapshot.attempts.find((candidate) => candidate.id === reviewId); const all = snapshot.history_items.filter((item) => item.attempt_id === reviewId); const items = all.filter((item) => filter === "all" || (filter === "correct" ? item.is_correct : !item.is_correct)); return <main className="workspace-panel"><button className="button button-secondary" type="button" onClick={() => setReviewId(null)}>Back to history</button><header><p className="eyebrow">Quiz review</p><h1>{attempt?.title ?? "Quiz"}</h1></header><div className="review-filters">{(["all", "correct", "wrong"] as const).map((value) => <button type="button" className={filter === value ? "active" : ""} onClick={() => setFilter(value)} key={value}>{value}</button>)}</div><div className="review-list">{items.map((item) => <article className={`review-card ${item.is_correct ? "correct" : "wrong"}`} key={item.id}><div className="review-card-head"><span>Question {item.position}</span><strong>{item.is_correct ? "Correct" : "Wrong"}</strong></div><h2>{item.question_snapshot.question_text}</h2><div className="review-choices">{item.choices_snapshot.map((choice) => <div className={`review-choice ${item.correct_choice_ids.includes(choice.id) ? "correct" : item.selected_choice_ids?.includes(choice.id) ? "wrong" : ""}`} key={choice.id}><span>{choice.label}</span><p>{choice.choice_text}</p></div>)}</div><div className="review-explanation"><strong>Explanation</strong><p>{item.explanation_snapshot}</p></div></article>)}</div></main>; }
+  const [reviewId, setReviewId] = useState<string | null>(null); const [filter, setFilter] = useState<ReviewFilter>("all");
+  if (reviewId) { const attempt = snapshot.attempts.find((candidate) => candidate.id === reviewId); const all = snapshot.history_items.filter((item) => item.attempt_id === reviewId); const items = filterReviewItems(all, filter); return <main className="workspace-panel"><button className="button button-secondary" type="button" onClick={() => setReviewId(null)}>Back to history</button><header><p className="eyebrow">Quiz review</p><h1>{attempt?.title ?? "Quiz"}</h1></header><ReviewFilterTabs items={all} filter={filter} onChange={setFilter} /><ReviewQuestionList items={items} /></main>; }
   return <main className="workspace-panel"><header><p className="eyebrow">Stored on this device</p><h1>Quiz history</h1></header><section className="history-list">{snapshot.attempts.filter((attempt) => attempt.status !== "abandoned").map((attempt) => <article className="history-row" key={attempt.id}><div className="history-title"><div><h2>{attempt.title ?? "Quiz"}</h2><p>{new Date(attempt.started_at).toLocaleDateString()}</p></div></div><div className="history-detail"><span>Score</span><strong>{Math.round(Number(attempt.score_percent))}%</strong></div><div className="history-detail"><span>Correct</span><strong>{attempt.correct_count}/{attempt.total_questions}</strong></div>{attempt.status === "submitted" ? <button className="button button-secondary" type="button" onClick={() => setReviewId(attempt.id)}>Review</button> : <span className="status-badge status-draft">In progress</span>}</article>)}</section></main>;
 }
 

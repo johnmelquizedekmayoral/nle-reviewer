@@ -8,10 +8,6 @@ import type { LocalCategory, LocalQuestion } from "@/lib/offline/types";
 
 type Props = { categories: LocalCategory[]; questions: LocalQuestion[]; onRefresh: () => Promise<void> };
 
-function slugifyCategory(value: string) {
-  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "category";
-}
-
 export function QuestionManagerPanel({ categories, questions, onRefresh }: Props) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set<string>());
@@ -20,8 +16,12 @@ export function QuestionManagerPanel({ categories, questions, onRefresh }: Props
   const [editing, setEditing] = useState<LocalQuestion | null>(null);
   const [moveDestination, setMoveDestination] = useState("");
   const [categoryParentId, setCategoryParentId] = useState<string | null>(null);
+  const [categoryMoveDestination, setCategoryMoveDestination] = useState("__root__");
+  const [categoryRename, setCategoryRename] = useState("");
   const [busy, setBusy] = useState(false);
+  const [categoryBusy, setCategoryBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [categoryMessage, setCategoryMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
   const matchingQuestions = useMemo(() => {
     let filtered = questions;
@@ -43,6 +43,37 @@ export function QuestionManagerPanel({ categories, questions, onRefresh }: Props
   const allMatchingSelected = matchingQuestions.length > 0 && matchingQuestions.every((question) => selectedIds.has(question.id));
   const categoryById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const categoryOptions = useMemo(() => [...categories].sort((a, b) => a.path.localeCompare(b.path)), [categories]);
+  const questionCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    questions.forEach((question) => counts.set(question.category_id, (counts.get(question.category_id) ?? 0) + 1));
+    return counts;
+  }, [questions]);
+  const selectedFolder = selectedCategory ? categoryById.get(selectedCategory) ?? null : null;
+  const selectedBranchIds = useMemo(() => {
+    const branch = new Set<string>();
+    if (!selectedCategory) return branch;
+    branch.add(selectedCategory);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const category of categories) {
+        if (category.parent_id && branch.has(category.parent_id) && !branch.has(category.id)) {
+          branch.add(category.id); changed = true;
+        }
+      }
+    }
+    return branch;
+  }, [categories, selectedCategory]);
+  const categoryMoveOptions = useMemo(() => categoryOptions.filter((category) => !selectedBranchIds.has(category.id)), [categoryOptions, selectedBranchIds]);
+
+  function selectCategory(id: string | null) {
+    setSelectedCategory(id);
+    setCategoryParentId(id);
+    const folder = id ? categoryById.get(id) : null;
+    setCategoryRename(folder?.name ?? "");
+    setCategoryMoveDestination(folder?.parent_id ?? "__root__");
+    setCategoryMessage(null);
+  }
 
   async function submitQuestions(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -123,25 +154,62 @@ export function QuestionManagerPanel({ categories, questions, onRefresh }: Props
     const form = event.currentTarget;
     const data = new FormData(form);
     const name = String(data.get("category_name") ?? "").trim();
-    if (!name) { setMessage("Enter a folder name."); return; }
-    setBusy(true); setMessage(null);
+    if (!name) { setCategoryMessage({ tone: "error", text: "Enter a folder name." }); return; }
+    setCategoryBusy(true); setCategoryMessage(null);
     try {
-      const { data: created, error } = await createClient().from("categories").insert({
-        name,
-        slug: slugifyCategory(name),
-        kind: "folder",
-        parent_id: categoryParentId,
-      }).select("id").single();
-      if (error) setMessage(error.code === "23505" ? "A folder with that name already exists in this location." : error.message);
+      const { data: created, error } = await createClient().rpc("create_category_folder", {
+        p_name: name,
+        p_parent_id: categoryParentId,
+      });
+      if (error) setCategoryMessage({ tone: "error", text: error.message });
       else {
         form.reset();
-        setMessage(categoryParentId ? `Subfolder “${name}” created.` : `Root folder “${name}” created.`);
+        setCategoryMessage({ tone: "success", text: categoryParentId ? `Subfolder “${name}” created.` : `Root folder “${name}” created.` });
         await onRefresh();
-        if (created?.id) { setCategoryParentId(created.id); setSelectedCategory(created.id); }
+        if (created?.id) {
+          setCategoryParentId(created.id); setSelectedCategory(created.id);
+          setCategoryRename(name); setCategoryMoveDestination(categoryParentId ?? "__root__");
+        }
       }
     } catch (categoryError) {
-      setMessage(categoryError instanceof Error ? categoryError.message : "The folder could not be created.");
-    } finally { setBusy(false); }
+      setCategoryMessage({ tone: "error", text: categoryError instanceof Error ? categoryError.message : "The folder could not be created." });
+    } finally { setCategoryBusy(false); }
+  }
+
+  async function manageCategory(action: "move" | "rename" | "delete") {
+    if (!selectedCategory || !selectedFolder) return;
+    if (action === "rename" && !categoryRename.trim()) {
+      setCategoryMessage({ tone: "error", text: "Enter the folder's new name." }); return;
+    }
+    if (action === "move" && (selectedFolder.parent_id ?? "__root__") === categoryMoveDestination) {
+      setCategoryMessage({ tone: "error", text: "Choose a different destination." }); return;
+    }
+    if (action === "delete") {
+      const branchQuestions = questions.filter((question) => selectedBranchIds.has(question.category_id)).length;
+      const approved = window.confirm(`Delete “${selectedFolder.name}”, its ${selectedBranchIds.size - 1} subfolder(s), and archive ${branchQuestions} question(s)? Past quiz results will remain safe.`);
+      if (!approved) return;
+    }
+    setCategoryBusy(true); setCategoryMessage(null);
+    try {
+      const { data, error } = await createClient().rpc("manage_category_branch", {
+        p_category_id: selectedCategory,
+        p_action: action,
+        p_destination_id: action === "move" && categoryMoveDestination !== "__root__" ? categoryMoveDestination : null,
+        p_name: action === "rename" ? categoryRename.trim() : null,
+      });
+      if (error) throw error;
+      await onRefresh();
+      if (action === "delete") {
+        setSelectedCategory(null); setCategoryParentId(null); setCategoryRename("");
+        setCategoryMessage({ tone: "success", text: `${data?.folders_archived ?? selectedBranchIds.size} folder(s) deleted; ${data?.questions_archived ?? 0} question(s) archived.` });
+      } else if (action === "move") {
+        setCategoryMessage({ tone: "success", text: `“${selectedFolder.name}” and its subfolders were moved.` });
+      } else {
+        setCategoryMessage({ tone: "success", text: `Folder renamed to “${categoryRename.trim()}”.` });
+      }
+    } catch (categoryError) {
+      setCategoryMessage({ tone: "error", text: categoryError instanceof Error ? categoryError.message : "The folder change failed." });
+    } finally { setCategoryBusy(false); }
   }
 
   const editChoices = new Map((Array.isArray(editing?.choices) ? editing.choices : []).map((choice) => [choice.label, choice]));
@@ -151,9 +219,32 @@ export function QuestionManagerPanel({ categories, questions, onRefresh }: Props
       <header className="admin-header"><div><p className="eyebrow">Local question workspace</p><h1>Question Manager</h1><p className="page-description">Browse folders as a tree, edit one question, or manage many at once.</p></div><span className="sync-badge">{questions.length} cached</span></header>
       {message ? <p className="notice">{message}</p> : null}
       <section className="question-manager-layout">
-        <aside className="tree-panel"><h2>Categories</h2><CategoryTree categories={categories} selectedId={selectedCategory} onSelect={setSelectedCategory} /></aside>
+        <aside className="tree-panel">
+          <div className="tree-panel-heading"><div><p className="eyebrow">Folder structure</p><h2>Categories</h2></div><span>{categories.length}</span></div>
+          <CategoryTree categories={categories} selectedId={selectedCategory} onSelect={selectCategory} questionCounts={questionCounts} />
+          <section className="tree-category-manager" aria-labelledby="category-manager-title">
+            <div><h3 id="category-manager-title">Category Manager</h3><p>Create folders here, then select a folder in the tree to rename, move, or delete its complete branch.</p></div>
+            <div className="tree-create-mode" aria-label="Choose folder type">
+              <button type="button" className={categoryParentId === null ? "active" : ""} onClick={() => { setCategoryParentId(null); setCategoryMessage(null); }}>New root</button>
+              <button type="button" className={categoryParentId !== null ? "active" : ""} disabled={!selectedFolder} onClick={() => { if (selectedCategory) setCategoryParentId(selectedCategory); setCategoryMessage(null); }}>New subfolder</button>
+            </div>
+            <p className="category-parent-label"><span>New folder location</span><strong>{categoryParentId ? categoryById.get(categoryParentId)?.path ?? "Selected folder" : "Root level"}</strong></p>
+            <form className="tree-category-form" onSubmit={createCategory}>
+              <label className="field">Folder name<input name="category_name" maxLength={120} placeholder={categoryParentId ? "New subfolder" : "New root folder"} disabled={categoryBusy} required /></label>
+              <button className="button" type="submit" disabled={categoryBusy}>{categoryBusy ? "Creating…" : categoryParentId ? "Create subfolder" : "Create root folder"}</button>
+            </form>
+            {selectedFolder ? <section className="tree-branch-tools" aria-label={`Manage ${selectedFolder.name}`}>
+              <div><h4>Manage selected folder</h4><small>{selectedBranchIds.size} folder(s) · {questions.filter((question) => selectedBranchIds.has(question.category_id)).length} question(s)</small></div>
+              <label className="field">Folder name<input value={categoryRename} maxLength={120} disabled={categoryBusy} onChange={(event) => setCategoryRename(event.target.value)} /></label>
+              <button className="button button-secondary" type="button" disabled={categoryBusy || !categoryRename.trim() || categoryRename.trim() === selectedFolder.name} onClick={() => manageCategory("rename")}>Rename folder</button>
+              <label className="field">Move entire branch to<select value={categoryMoveDestination} disabled={categoryBusy} onChange={(event) => setCategoryMoveDestination(event.target.value)}><option value="__root__">Root level</option>{categoryMoveOptions.map((category) => <option value={category.id} key={category.id}>{category.path}</option>)}</select></label>
+              <button className="button button-secondary" type="button" disabled={categoryBusy || (selectedFolder.parent_id ?? "__root__") === categoryMoveDestination} onClick={() => manageCategory("move")}>Move folder tree</button>
+              <button className="button button-danger" type="button" disabled={categoryBusy} onClick={() => manageCategory("delete")}>Delete folder tree</button>
+            </section> : null}
+            {categoryMessage ? <p className={`tree-category-status ${categoryMessage.tone}`} role="status">{categoryMessage.text}</p> : null}
+          </section>
+        </aside>
         <div className="question-manager-content">
-          <div className="question-manager-tools">
           <section className="form-card unified-entry">
             <div className="segmented-control"><button type="button" className={entryMode === "single" ? "active" : ""} onClick={() => setEntryMode("single")}>Add one</button><button type="button" className={entryMode === "bulk" ? "active" : ""} onClick={() => { setEntryMode("bulk"); setEditing(null); }}>Add in bulk</button></div>
             <form className="manager-form" onSubmit={submitQuestions} key={`${entryMode}-${editing?.id ?? "new"}`}>
@@ -170,16 +261,6 @@ export function QuestionManagerPanel({ categories, questions, onRefresh }: Props
               <div className="form-actions"><button className="button" type="submit" disabled={busy}>{busy ? "Saving…" : editing ? "Update question" : entryMode === "bulk" ? "Parse and add" : "Add question"}</button>{editing ? <button className="button button-secondary" type="button" onClick={() => setEditing(null)}>Cancel edit</button> : null}</div>
             </form>
           </section>
-          <section className="form-card category-manager-card">
-            <div><p className="eyebrow">Folder structure</p><h2>Category Manager</h2><p className="form-help">Choose Root level to create a root folder, or select a folder to create a subfolder inside it.</p></div>
-            <div className="category-manager-tree"><CategoryTree categories={categories} selectedId={categoryParentId} onSelect={setCategoryParentId} allLabel="Root level" /></div>
-            <form className="manager-form" onSubmit={createCategory}>
-              <p className="category-parent-label"><span>New folder location</span><strong>{categoryParentId ? categoryById.get(categoryParentId)?.path ?? "Selected folder" : "Root level"}</strong></p>
-              <label className="field">Folder name<input name="category_name" maxLength={120} placeholder={categoryParentId ? "New subfolder" : "New root folder"} required /></label>
-              <button className="button" type="submit" disabled={busy}>{busy ? "Creating…" : categoryParentId ? "Create subfolder" : "Create root folder"}</button>
-            </form>
-          </section>
-          </div>
 
           <section className="bulk-toolbar">
             <strong>{selectedIds.size} selected</strong>
