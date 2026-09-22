@@ -4,17 +4,17 @@ import { signIn } from "./actions";
 
 export const metadata: Metadata = { title: "Sign in" };
 
-type LoginPageProps = { searchParams: Promise<{ error?: string }> };
+type LoginPageProps = { searchParams: Promise<{ error?: string; success?: string }> };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const { error } = await searchParams;
+  const { error, success } = await searchParams;
 
   return (
     <main className="auth-page">
       <section className="auth-card" aria-labelledby="login-title">
         <Link className="brand" href="/dashboard">
           <span className="brand-mark">N</span>
-          <span style={{ color: "var(--ink)" }}>NLE Review</span>
+          <span style={{ color: "var(--ink)" }}>NLE Reviewer</span>
         </Link>
         <p className="eyebrow">Personal learning account</p>
         <h1 id="login-title">Continue your review</h1>
@@ -22,6 +22,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           Sign in to keep your quiz history, mistakes, and progress together.
         </p>
         {error ? <p className="auth-error">{error}</p> : null}
+        {success ? <p className="notice notice-success">{success}</p> : null}
         <form action={signIn}>
           <label className="field">
             Email address
@@ -33,6 +34,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </label>
           <button className="button" type="submit">Sign in</button>
         </form>
+        <p className="auth-switch">New here? <Link href="/signup">Create an account</Link></p>
       </section>
     </main>
   );

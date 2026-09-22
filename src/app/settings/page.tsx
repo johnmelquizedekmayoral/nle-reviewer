@@ -1,0 +1,140 @@
+import type { Metadata } from "next";
+import { AppSidebar } from "@/components/app-sidebar";
+import { requireUser } from "@/lib/auth/require-user";
+import { saveSettings } from "./actions";
+
+export const metadata: Metadata = { title: "Settings" };
+export const dynamic = "force-dynamic";
+
+type SettingsPageProps = {
+  searchParams: Promise<{ saved?: string; error?: string }>;
+};
+
+export default async function SettingsPage({ searchParams }: SettingsPageProps) {
+  const query = await searchParams;
+  const { supabase, userId } = await requireUser();
+  const [{ data: profile }, { data: preferences }] = await Promise.all([
+    supabase.from("profiles").select("display_name").eq("id", userId).single(),
+    supabase
+      .from("user_preferences")
+      .select("theme, accent_color, font_scale, reduced_motion")
+      .eq("user_id", userId)
+      .single(),
+  ]);
+
+  const theme = preferences?.theme ?? "system";
+  const accent = preferences?.accent_color ?? "green";
+  const fontScale = Number(preferences?.font_scale ?? 1);
+
+  return (
+    <div className="shell">
+      <AppSidebar active="settings" />
+
+      <main className="main settings-main">
+        <header className="admin-header">
+          <div>
+            <p className="eyebrow">Personal preferences</p>
+            <h1>Settings</h1>
+            <p className="page-description">
+              Change your profile and the appearance of the entire reviewer.
+            </p>
+          </div>
+        </header>
+
+        {query.saved ? <p className="notice notice-success">Settings saved.</p> : null}
+        {query.error ? <p className="notice notice-error">{query.error}</p> : null}
+
+        <form className="settings-form" action={saveSettings}>
+          <section className="form-card settings-section">
+            <div>
+              <p className="step-number">PROFILE</p>
+              <h2>Your account</h2>
+            </div>
+            <label className="field">
+              Display name
+              <input
+                name="display_name"
+                type="text"
+                minLength={1}
+                maxLength={80}
+                defaultValue={profile?.display_name ?? "Learner"}
+                required
+              />
+            </label>
+          </section>
+
+          <section className="form-card settings-section">
+            <div>
+              <p className="step-number">APPEARANCE</p>
+              <h2>Theme</h2>
+              <p className="form-help">System follows your computer’s light or dark setting.</p>
+            </div>
+            <fieldset className="settings-options">
+              <legend className="sr-only">Theme</legend>
+              {[
+                ["system", "System"],
+                ["light", "Light"],
+                ["dark", "Dark"],
+              ].map(([value, label]) => (
+                <label className="setting-choice" key={value}>
+                  <input type="radio" name="theme" value={value} defaultChecked={theme === value} />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </fieldset>
+
+            <div>
+              <h2>Accent color</h2>
+              <p className="form-help">Used for progress, focus, and active navigation.</p>
+            </div>
+            <fieldset className="settings-options accent-options">
+              <legend className="sr-only">Accent color</legend>
+              {[
+                ["green", "Green"],
+                ["blue", "Blue"],
+                ["purple", "Purple"],
+              ].map(([value, label]) => (
+                <label className="setting-choice" key={value}>
+                  <input
+                    type="radio"
+                    name="accent_color"
+                    value={value}
+                    defaultChecked={accent === value}
+                  />
+                  <span className={`accent-swatch ${value}`} />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </fieldset>
+
+            <label className="field">
+              Text size
+              <select name="font_scale" defaultValue={String(fontScale)}>
+                <option value="0.9">Small</option>
+                <option value="1">Default</option>
+                <option value="1.1">Large</option>
+                <option value="1.2">Extra large</option>
+              </select>
+            </label>
+
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                name="reduced_motion"
+                defaultChecked={preferences?.reduced_motion ?? false}
+              />
+              <span>
+                <strong>Reduce motion</strong>
+                <small>Turns off hover movement and most transitions.</small>
+              </span>
+            </label>
+          </section>
+
+          <div className="settings-save">
+            <button className="button" type="submit">Save settings</button>
+          </div>
+        </form>
+      </main>
+    </div>
+  );
+}

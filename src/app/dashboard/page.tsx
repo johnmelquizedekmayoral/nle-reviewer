@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -12,11 +13,26 @@ type DashboardData = {
   questions: number;
   accuracy: number;
   studyMinutes: number;
+  recentAttempts: Array<{
+    id: string;
+    title: string | null;
+    totalQuestions: number;
+    correctCount: number;
+    scorePercent: number;
+    submittedAt: string | null;
+  }>;
 };
 
 async function getDashboardData(): Promise<DashboardData> {
   if (!isSupabaseConfigured()) {
-    return { name: "Learner", quizzes: 0, questions: 0, accuracy: 0, studyMinutes: 0 };
+    return {
+      name: "Learner",
+      quizzes: 0,
+      questions: 0,
+      accuracy: 0,
+      studyMinutes: 0,
+      recentAttempts: [],
+    };
   }
 
   const supabase = await createClient();
@@ -28,8 +44,9 @@ async function getDashboardData(): Promise<DashboardData> {
     supabase.from("profiles").select("display_name").eq("id", userId).maybeSingle(),
     supabase
       .from("quiz_attempts")
-      .select("total_questions, correct_count, duration_ms")
-      .eq("status", "submitted"),
+      .select("id, title, total_questions, correct_count, score_percent, submitted_at, duration_ms")
+      .eq("status", "submitted")
+      .order("submitted_at", { ascending: false }),
   ]);
 
   const rows = attempts ?? [];
@@ -43,6 +60,14 @@ async function getDashboardData(): Promise<DashboardData> {
     questions,
     accuracy: questions ? Math.round((correct / questions) * 100) : 0,
     studyMinutes: Math.round(duration / 60000),
+    recentAttempts: rows.slice(0, 5).map((attempt) => ({
+      id: attempt.id,
+      title: attempt.title,
+      totalQuestions: attempt.total_questions,
+      correctCount: attempt.correct_count,
+      scorePercent: Number(attempt.score_percent),
+      submittedAt: attempt.submitted_at,
+    })),
   };
 }
 
@@ -66,7 +91,7 @@ export default async function DashboardPage() {
             <p className="eyebrow">Review dashboard</p>
             <h1>Welcome, {data.name}.</h1>
           </div>
-          <button className="button" type="button" disabled>New quiz</button>
+          <Link className="button" href="/quiz/new">New quiz</Link>
         </header>
 
         {!configured ? (
@@ -95,14 +120,44 @@ export default async function DashboardPage() {
           <article className="panel">
             <div className="section-head">
               <h2>Recent quizzes</h2>
-              <span className="muted">Latest first</span>
+              <Link className="text-link" href="/history">View all</Link>
             </div>
-            <div className="empty-state">
-              <div>
-                <strong>No completed quizzes yet</strong>
-                <p className="muted">Your score, response time, and answer history will appear here after the quiz flow is connected.</p>
+            {data.recentAttempts.length ? (
+              <div className="recent-quiz-list">
+                {data.recentAttempts.map((attempt) => (
+                  <Link
+                    className="recent-quiz"
+                    href={`/quiz/${attempt.id}?position=1`}
+                    key={attempt.id}
+                  >
+                    <div>
+                      <strong>{attempt.title ?? "Quiz"}</strong>
+                      <p>
+                        {attempt.submittedAt
+                          ? new Date(attempt.submittedAt).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                              timeZone: "UTC",
+                            })
+                          : "Completed"}
+                      </p>
+                    </div>
+                    <div className="recent-quiz-score">
+                      <strong>{attempt.scorePercent.toFixed(0)}%</strong>
+                      <span>{attempt.correctCount}/{attempt.totalQuestions}</span>
+                    </div>
+                  </Link>
+                ))}
               </div>
-            </div>
+            ) : (
+              <div className="empty-state">
+                <div>
+                  <strong>No completed quizzes yet</strong>
+                  <p className="muted">Finish your first quiz and its score will appear here.</p>
+                </div>
+              </div>
+            )}
           </article>
 
           <article className="panel">

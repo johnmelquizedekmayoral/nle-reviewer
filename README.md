@@ -6,6 +6,12 @@ This is the working foundation for the quiz website. It currently includes:
 - Supabase browser/server clients and session refresh proxy
 - Email/password sign-in action
 - Responsive learner dashboard
+- Instant-feedback quizzes with shuffled questions and choices
+- Saved scores and recent quiz results on the dashboard
+- Full quiz history with review and resume links
+- Account-based theme, accent color, text size, and reduced-motion settings
+- Public email/password registration through Supabase Auth
+- Admin-controlled learner and instructor role assignment
 - Versioned PostgreSQL schema with Row Level Security
 - Tables for users, folders, questions, choices, quiz attempts, history, and per-question statistics
 
@@ -78,12 +84,33 @@ four answer choices, correct-answer selection, explanations, editing, hiding, sh
 After the initial schema, run `supabase/migrations/0002_question_manager_bulk.sql`
 once in Supabase SQL Editor before using the bulk parser or question editor.
 
+Then run `supabase/migrations/0003_quiz_engine.sql` once to enable category-based
+quiz creation, secure answer submission, instant explanations, and saved scores.
+
+Run `supabase/migrations/0004_signup_and_roles.sql` once to enable the secure
+administrator user directory and role assignment.
+
+## Deploy to Vercel
+
+1. Import the `johnmelquizedekmayoral/nle-reviewer` GitHub repository in Vercel.
+2. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+   under **Project Settings → Environment Variables**.
+3. Deploy the project.
+4. In Supabase **Authentication → URL Configuration**, set the Site URL to the
+   production Vercel address and add the same address to Redirect URLs.
+5. In **Authentication → Providers → Email**, allow new-user signups and keep
+   email confirmation enabled for public registration.
+
+The service-role key is not required for deployment and must never be exposed
+as a `NEXT_PUBLIC_` environment variable.
+
 ## Main project paths
 
 ```text
 src/app/dashboard/page.tsx          Dashboard
 src/app/login/page.tsx              Login screen
 src/app/login/actions.ts            Login/logout server actions
+src/app/quiz/                       Quiz setup, questions, and server actions
 src/lib/supabase/                   Supabase clients and session handling
 supabase/migrations/                Versioned database changes
 proxy.ts                            Session refresh proxy
