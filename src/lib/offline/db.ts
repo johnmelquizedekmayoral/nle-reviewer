@@ -4,7 +4,7 @@ const DATABASE = "nle-reviewer-local-v1";
 const VERSION = 1;
 const STORE = "records";
 
-type RecordValue = WorkspaceSnapshot | OfflineQuizPack | string | number | boolean;
+type RecordValue = WorkspaceSnapshot | OfflineQuizPack | string | string[] | number | boolean;
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

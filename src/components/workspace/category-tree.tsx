@@ -7,9 +7,10 @@ type Props = {
   categories: LocalCategory[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  allLabel?: string;
 };
 
-export function CategoryTree({ categories, selectedId, onSelect }: Props) {
+export function CategoryTree({ categories, selectedId, onSelect, allLabel = "All questions" }: Props) {
   const [open, setOpen] = useState(() => new Set(categories.filter((category) => !category.parent_id).map((category) => category.id)));
   const children = new Map<string | null, LocalCategory[]>();
   for (const category of categories) {
@@ -48,7 +49,7 @@ export function CategoryTree({ categories, selectedId, onSelect }: Props) {
 
   return (
     <div className="category-tree">
-      <button className={`tree-all ${selectedId === null ? "active" : ""}`} type="button" onClick={() => onSelect(null)}>All questions</button>
+      <button className={`tree-all ${selectedId === null ? "active" : ""}`} type="button" onClick={() => onSelect(null)}>{allLabel}</button>
       {render(null)}
     </div>
   );

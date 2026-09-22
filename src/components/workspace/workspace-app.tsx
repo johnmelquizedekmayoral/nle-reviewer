@@ -21,6 +21,13 @@ async function uploadOfflinePack(pack: OfflineQuizPack) {
   return createClient().rpc("sync_offline_quiz_attempt", { p_attempt_id: pack.attempt.id, p_answers: pack.answers ?? [] });
 }
 
+const abandonQueueKey = (userId: string) => `abandoned-quizzes:${userId}`;
+
+async function queueAbandonedQuiz(userId: string, attemptId: string) {
+  const queued = await readLocal<string[]>(abandonQueueKey(userId)) ?? [];
+  if (!queued.includes(attemptId)) await writeLocal(abandonQueueKey(userId), [...queued, attemptId]);
+}
+
 function normalizeSnapshot(value: WorkspaceSnapshot): WorkspaceSnapshot {
   const categories = (Array.isArray(value.categories) ? value.categories : []).flatMap((category) => {
     if (!category || typeof category.id !== "string") return [];
@@ -90,6 +97,7 @@ export function WorkspaceApp({ userId, role, roleCheckedAt, initialName, initial
       const incoming = normalizeSnapshot(data as WorkspaceSnapshot);
       const cached = includeBank ? null : await readLocal<WorkspaceSnapshot>(cacheKey);
       const next = includeBank ? incoming : { ...incoming, questions: normalizeSnapshot(cached ?? incoming).questions };
+      if (next.attempts.some((attempt) => attempt.status === "active")) setPanel("quiz");
       setSnapshot(next); await writeLocal(cacheKey, next); if (!silent) setNotice("Everything is up to date.");
     }
     setSyncing(false);
@@ -98,17 +106,27 @@ export function WorkspaceApp({ userId, role, roleCheckedAt, initialName, initial
   useEffect(() => {
     let cancelled = false;
     async function start() {
-      const [cached, activeId, savedPanel] = await Promise.all([
+      const [cached, activeId, savedPanel, queuedAbandons] = await Promise.all([
         readLocal<WorkspaceSnapshot>(cacheKey),
         readLocal<string>(`active-quiz:${userId}`),
         readLocal<string>(`last-panel:${userId}`),
+        readLocal<string[]>(abandonQueueKey(userId)),
       ]);
-      if (!cancelled && cached) setSnapshot(normalizeSnapshot(cached));
-      if (!cancelled && savedPanel && ["dashboard", "quiz", "history", "questions", "users", "settings"].includes(savedPanel)) setPanel(savedPanel as Panel);
+      if (navigator.onLine && queuedAbandons?.length) {
+        const supabase = createClient();
+        const results = await Promise.all(queuedAbandons.map(async (attemptId) => {
+          const { error } = await supabase.rpc("abandon_offline_quiz_attempt", { p_attempt_id: attemptId });
+          return error ? attemptId : null;
+        }));
+        const failed = results.filter((attemptId): attemptId is string => Boolean(attemptId));
+        if (failed.length) await writeLocal(abandonQueueKey(userId), failed);
+        else await deleteLocal(abandonQueueKey(userId));
+      }
       let completedPackWasSynced = false;
+      let restoredActiveQuiz = false;
       if (activeId) {
         const pack = await readLocal<OfflineQuizPack>(quizKey(activeId));
-        if (!cancelled && pack && (pack.answers?.length ?? 0) < pack.items.length) setActiveQuiz(pack);
+        if (!cancelled && pack && (pack.answers?.length ?? 0) < pack.items.length) { setActiveQuiz(pack); restoredActiveQuiz = true; }
         if (!cancelled && pack && (pack.answers?.length ?? 0) === pack.items.length) {
           setResultQuiz(pack);
           if (navigator.onLine) {
@@ -122,6 +140,13 @@ export function WorkspaceApp({ userId, role, roleCheckedAt, initialName, initial
             }
           }
         }
+        if (!pack) await deleteLocal(`active-quiz:${userId}`);
+      }
+      if (!cancelled && cached) {
+        const normalized = normalizeSnapshot(cached);
+        setSnapshot(normalized);
+        if (!restoredActiveQuiz && normalized.attempts.some((attempt) => attempt.status === "active")) setPanel("quiz");
+        else if (savedPanel && ["dashboard", "quiz", "history", "questions", "users", "settings"].includes(savedPanel)) setPanel(savedPanel as Panel);
       }
       if (navigator.onLine && !completedPackWasSynced) void refresh(true);
     }
@@ -172,9 +197,59 @@ export function WorkspaceApp({ userId, role, roleCheckedAt, initialName, initial
     window.setTimeout(() => void syncCompletedPack(pack), 900);
   }
 
+  async function activateQuiz(pack: OfflineQuizPack) {
+    await Promise.all([
+      writeLocal(quizKey(pack.attempt.id), pack),
+      writeLocal(`active-quiz:${userId}`, pack.attempt.id),
+    ]);
+    setResultQuiz(null);
+    setActiveQuiz(pack);
+  }
+
+  async function resumeQuiz(attemptId: string) {
+    const localPack = await readLocal<OfflineQuizPack>(quizKey(attemptId));
+    if (localPack && (localPack.answers?.length ?? 0) < localPack.items.length) {
+      await activateQuiz(localPack);
+      return;
+    }
+    if (!navigator.onLine) throw new Error("Reconnect once to recover this unfinished quiz on this device.");
+    const { data, error } = await createClient().rpc("get_offline_quiz_pack", { p_attempt_id: attemptId });
+    if (error || !data) throw new Error(error?.message ?? "The unfinished quiz could not be recovered.");
+    await activateQuiz(data as OfflineQuizPack);
+  }
+
+  async function quitQuiz(pack: OfflineQuizPack) {
+    await Promise.all([
+      deleteLocal(quizKey(pack.attempt.id)),
+      deleteLocal(`active-quiz:${userId}`),
+    ]);
+    const nextSnapshot = snapshot ? {
+      ...snapshot,
+      attempts: snapshot.attempts.map((attempt) => attempt.id === pack.attempt.id ? { ...attempt, status: "abandoned" as const } : attempt),
+    } : null;
+    if (nextSnapshot) { setSnapshot(nextSnapshot); await writeLocal(cacheKey, nextSnapshot); }
+    setActiveQuiz(null);
+    setResultQuiz(null);
+    setPanel("quiz");
+
+    if (!navigator.onLine) {
+      await queueAbandonedQuiz(userId, pack.attempt.id);
+      setNotice("Quiz discarded locally. Its server record will be closed when you reconnect.");
+      return;
+    }
+    const { error } = await createClient().rpc("abandon_offline_quiz_attempt", { p_attempt_id: pack.attempt.id });
+    if (error) {
+      await queueAbandonedQuiz(userId, pack.attempt.id);
+      setNotice("Quiz progress was discarded. Server cleanup will retry automatically.");
+    } else {
+      setNotice("Unfinished quiz discarded.");
+      await refresh(true, false);
+    }
+  }
+
   const preferences = snapshot?.preferences ?? { user_id: userId, ...initialPreferences };
   const name = snapshot?.profile.display_name ?? initialName;
-  if (activeQuiz) return <OfflineQuiz pack={activeQuiz} onComplete={completeQuiz} onExit={() => setActiveQuiz(null)} />;
+  if (activeQuiz) return <OfflineQuiz pack={activeQuiz} onComplete={completeQuiz} onQuit={quitQuiz} />;
 
   const nav: Array<[Panel, string]> = [["dashboard", "Dashboard"], ["quiz", "Take a quiz"], ["history", "Quiz history"]];
   if (canManageQuestions) nav.push(["questions", "Question Manager"]);
@@ -196,7 +271,7 @@ export function WorkspaceApp({ userId, role, roleCheckedAt, initialName, initial
         {notice ? <div className="workspace-toast" role="status">{notice}</div> : null}
         {!snapshot ? <WorkspaceSkeleton online={online} /> : null}
         {snapshot && panel === "dashboard" ? <DashboardPanel snapshot={snapshot} name={name} onQuiz={() => choosePanel("quiz")} /> : null}
-        {snapshot && panel === "quiz" ? <QuizPanel snapshot={snapshot} preferences={preferences} online={online} result={resultQuiz} onStart={async (pack) => { setResultQuiz(null); setActiveQuiz(pack); await writeLocal(quizKey(pack.attempt.id), pack); await writeLocal(`active-quiz:${userId}`, pack.attempt.id); }} /> : null}
+        {snapshot && panel === "quiz" ? <QuizPanel snapshot={snapshot} preferences={preferences} online={online} result={resultQuiz} onStart={activateQuiz} onResume={resumeQuiz} /> : null}
         {snapshot && panel === "history" ? <HistoryPanel snapshot={snapshot} /> : null}
         {snapshot && panel === "questions" && canManageQuestions ? <PanelErrorBoundary title="Question Manager"><QuestionManagerPanel categories={snapshot.categories} questions={snapshot.questions} onRefresh={() => refresh(true)} /></PanelErrorBoundary> : null}
         {snapshot && panel === "users" && canManageUsers ? <UsersPanel snapshot={snapshot} role={effectiveRole} currentUserId={userId} onRefresh={() => refresh(true, false)} /> : null}
@@ -263,23 +338,35 @@ function ActivityHeatmap({ attempts }: { attempts: LocalAttempt[] }) {
   return <div className="activity-heatmap"><div className="section-head"><h2>Study activity</h2><span className="muted">35 days</span></div><div className="heatmap-grid">{days.map((day) => <span className={`heat-${Math.min(day.count, 4)}`} title={`${day.label}: ${day.count} quiz${day.count === 1 ? "" : "zes"}`} aria-label={`${day.label}: ${day.count} quizzes`} key={day.key} />)}</div><small>Less <i className="heat-1" /><i className="heat-2" /><i className="heat-3" /><i className="heat-4" /> More</small></div>;
 }
 
-function QuizPanel({ snapshot, preferences, online, result, onStart }: { snapshot: WorkspaceSnapshot; preferences: LocalPreferences; online: boolean; result: OfflineQuizPack | null; onStart: (pack: OfflineQuizPack) => void }) {
-  const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null);
+function QuizPanel({ snapshot, preferences, online, result, onStart, onResume }: { snapshot: WorkspaceSnapshot; preferences: LocalPreferences; online: boolean; result: OfflineQuizPack | null; onStart: (pack: OfflineQuizPack) => Promise<void>; onResume: (attemptId: string) => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [resumeBusyId, setResumeBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const unfinished = snapshot.attempts.filter((attempt) => attempt.status === "active");
   async function start(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!online) { setError("Connect to download a new quiz. A downloaded quiz can then run fully offline."); return; }
     setBusy(true); setError(null); const form = new FormData(event.currentTarget);
-    const { data, error: requestError } = await createClient().rpc("create_offline_quiz_pack", { p_category_id: String(form.get("category_id")), p_question_count: Number(form.get("question_count")) });
-    if (requestError || !data) setError(requestError?.message ?? "Quiz could not be downloaded."); else onStart({ ...(data as OfflineQuizPack), answers: [], current_position: 0, needs_sync: false });
-    setBusy(false);
+    try {
+      const { data, error: requestError } = await createClient().rpc("create_offline_quiz_pack", { p_category_id: String(form.get("category_id")), p_question_count: Number(form.get("question_count")) });
+      if (requestError || !data) setError(requestError?.message ?? "Quiz could not be downloaded."); else await onStart(data as OfflineQuizPack);
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : "Quiz could not be saved on this device.");
+    } finally { setBusy(false); }
+  }
+  async function resume(attemptId: string) {
+    setResumeBusyId(attemptId); setError(null);
+    try { await onResume(attemptId); }
+    catch (resumeError) { setError(resumeError instanceof Error ? resumeError.message : "The unfinished quiz could not be recovered."); }
+    finally { setResumeBusyId(null); }
   }
   if (result) { const answers = result.answers ?? []; const correct = answers.filter((answer) => result.items.find((item) => item.id === answer.item_id)?.correct_choice_ids.includes(answer.selected_choice_id)).length; return <main className="workspace-panel"><article className="quiz-result-card"><p className="eyebrow">Results saved locally</p><h1>{Math.round(correct * 100 / Math.max(answers.length, 1))}%</h1><p>{correct} of {answers.length} correct</p><p className="muted">The result is uploading in the background when online.</p></article></main>; }
-  return <main className="workspace-panel"><header><p className="eyebrow">Download once, answer locally</p><h1>Start a quiz</h1><p className="page-description">Starting requires a connection. After the pack loads, answering and explanations do not wait for the server.</p></header>{error ? <p className="notice notice-error">{error}</p> : null}<article className="form-card quiz-setup-card"><form className="manager-form" onSubmit={start}><label className="field">Category<select name="category_id" defaultValue="" required><option value="" disabled>Select a topic</option>{snapshot.quiz_categories.map((category) => <option key={category.category_id} value={category.category_id}>{category.category_path} — {category.question_count}</option>)}</select></label><label className="field">Questions<input name="question_count" type="number" min={1} max={100} defaultValue={preferences.default_quiz_size} required /></label><button className="button" type="submit" disabled={busy || !online}>{busy ? "Downloading quiz…" : online ? "Download and begin" : "Connect to start"}</button></form></article></main>;
+  return <main className="workspace-panel"><header><p className="eyebrow">Download once, answer locally</p><h1>{unfinished.length ? "Resume your quiz" : "Start a quiz"}</h1><p className="page-description">An unfinished quiz locks the quiz session until you finish it or explicitly quit and discard its progress.</p></header>{error ? <p className="notice notice-error">{error}</p> : null}{unfinished.length ? <section className="unfinished-quiz-list" aria-label="Unfinished quizzes">{unfinished.map((attempt) => <article className="unfinished-quiz-card" key={attempt.id}><div><strong>{attempt.title ?? "Quiz"}</strong><p>Started {new Date(attempt.started_at).toLocaleString()} · {attempt.total_questions} questions</p></div><button className="button" type="button" disabled={resumeBusyId !== null} onClick={() => resume(attempt.id)}>{resumeBusyId === attempt.id ? "Recovering…" : "Resume quiz"}</button></article>)}</section> : <article className="form-card quiz-setup-card"><form className="manager-form" onSubmit={start}><label className="field">Category<select name="category_id" defaultValue="" required><option value="" disabled>Select a topic</option>{snapshot.quiz_categories.map((category) => <option key={category.category_id} value={category.category_id}>{category.category_path} — {category.question_count}</option>)}</select></label><label className="field">Questions<input name="question_count" type="number" min={1} max={100} defaultValue={preferences.default_quiz_size} required /></label><button className="button" type="submit" disabled={busy || !online}>{busy ? "Downloading quiz…" : online ? "Download and begin" : "Connect to start"}</button></form></article>}</main>;
 }
 
 function HistoryPanel({ snapshot }: { snapshot: WorkspaceSnapshot }) {
   const [reviewId, setReviewId] = useState<string | null>(null); const [filter, setFilter] = useState<"all" | "correct" | "wrong">("all");
   if (reviewId) { const attempt = snapshot.attempts.find((candidate) => candidate.id === reviewId); const all = snapshot.history_items.filter((item) => item.attempt_id === reviewId); const items = all.filter((item) => filter === "all" || (filter === "correct" ? item.is_correct : !item.is_correct)); return <main className="workspace-panel"><button className="button button-secondary" type="button" onClick={() => setReviewId(null)}>Back to history</button><header><p className="eyebrow">Quiz review</p><h1>{attempt?.title ?? "Quiz"}</h1></header><div className="review-filters">{(["all", "correct", "wrong"] as const).map((value) => <button type="button" className={filter === value ? "active" : ""} onClick={() => setFilter(value)} key={value}>{value}</button>)}</div><div className="review-list">{items.map((item) => <article className={`review-card ${item.is_correct ? "correct" : "wrong"}`} key={item.id}><div className="review-card-head"><span>Question {item.position}</span><strong>{item.is_correct ? "Correct" : "Wrong"}</strong></div><h2>{item.question_snapshot.question_text}</h2><div className="review-choices">{item.choices_snapshot.map((choice) => <div className={`review-choice ${item.correct_choice_ids.includes(choice.id) ? "correct" : item.selected_choice_ids?.includes(choice.id) ? "wrong" : ""}`} key={choice.id}><span>{choice.label}</span><p>{choice.choice_text}</p></div>)}</div><div className="review-explanation"><strong>Explanation</strong><p>{item.explanation_snapshot}</p></div></article>)}</div></main>; }
-  return <main className="workspace-panel"><header><p className="eyebrow">Stored on this device</p><h1>Quiz history</h1></header><section className="history-list">{snapshot.attempts.map((attempt) => <article className="history-row" key={attempt.id}><div className="history-title"><div><h2>{attempt.title ?? "Quiz"}</h2><p>{new Date(attempt.started_at).toLocaleDateString()}</p></div></div><div className="history-detail"><span>Score</span><strong>{Math.round(Number(attempt.score_percent))}%</strong></div><div className="history-detail"><span>Correct</span><strong>{attempt.correct_count}/{attempt.total_questions}</strong></div>{attempt.status === "submitted" ? <button className="button button-secondary" type="button" onClick={() => setReviewId(attempt.id)}>Review</button> : <span className="status-badge status-draft">In progress</span>}</article>)}</section></main>;
+  return <main className="workspace-panel"><header><p className="eyebrow">Stored on this device</p><h1>Quiz history</h1></header><section className="history-list">{snapshot.attempts.filter((attempt) => attempt.status !== "abandoned").map((attempt) => <article className="history-row" key={attempt.id}><div className="history-title"><div><h2>{attempt.title ?? "Quiz"}</h2><p>{new Date(attempt.started_at).toLocaleDateString()}</p></div></div><div className="history-detail"><span>Score</span><strong>{Math.round(Number(attempt.score_percent))}%</strong></div><div className="history-detail"><span>Correct</span><strong>{attempt.correct_count}/{attempt.total_questions}</strong></div>{attempt.status === "submitted" ? <button className="button button-secondary" type="button" onClick={() => setReviewId(attempt.id)}>Review</button> : <span className="status-badge status-draft">In progress</span>}</article>)}</section></main>;
 }
 
 function SettingsPanel({ name, preferences, onSaved }: { name: string; preferences: LocalPreferences; onSaved: () => Promise<void> }) {

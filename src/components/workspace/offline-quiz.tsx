@@ -7,19 +7,28 @@ import type { OfflineAnswer, OfflineQuizPack } from "@/lib/offline/types";
 type Props = {
   pack: OfflineQuizPack;
   onComplete: (pack: OfflineQuizPack) => void;
-  onExit: () => void;
+  onQuit: (pack: OfflineQuizPack) => Promise<void>;
 };
 
-export function OfflineQuiz({ pack: initialPack, onComplete, onExit }: Props) {
+export function OfflineQuiz({ pack: initialPack, onComplete, onQuit }: Props) {
   const [pack, setPack] = useState(initialPack);
   const [position, setPosition] = useState(initialPack.current_position ?? 0);
   const [selected, setSelected] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
+  const [quitting, setQuitting] = useState(false);
   const shownAt = useRef(0);
   const item = pack.items[position];
   const existing = useMemo(() => pack.answers?.find((answer) => answer.item_id === item?.id), [item?.id, pack.answers]);
 
   useEffect(() => { shownAt.current = Date.now(); }, [position]);
+  useEffect(() => {
+    const protectQuiz = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", protectQuiz);
+    return () => window.removeEventListener("beforeunload", protectQuiz);
+  }, []);
 
   if (!item) return null;
   const selectedId = existing?.selected_choice_id ?? selected;
@@ -56,6 +65,17 @@ export function OfflineQuiz({ pack: initialPack, onComplete, onExit }: Props) {
     await writeLocal(quizKey(pack.attempt.id), nextPack);
   }
 
+  async function quit() {
+    const confirmed = window.confirm("Quit this quiz? All unfinished progress will be permanently discarded.");
+    if (!confirmed) return;
+    setQuitting(true);
+    try { await onQuit(pack); }
+    catch {
+      setQuitting(false);
+      window.alert("The quiz could not be discarded. Your progress is still protected on this device.");
+    }
+  }
+
   const correctCount = pack.answers?.filter((answer) => pack.items.find((candidate) => candidate.id === answer.item_id)?.correct_choice_ids.includes(answer.selected_choice_id)).length ?? 0;
   const progress = Math.round(((position + (answered ? 1 : 0)) / pack.items.length) * 100);
 
@@ -63,7 +83,7 @@ export function OfflineQuiz({ pack: initialPack, onComplete, onExit }: Props) {
     <section className="workspace-quiz">
       <header className="quiz-top">
         <div><p className="eyebrow">Offline-ready quiz</p><h1>Question {position + 1} of {pack.items.length}</h1></div>
-        <button className="button button-secondary" type="button" onClick={onExit}>Save &amp; exit</button>
+        <button className="button button-danger" type="button" disabled={quitting} onClick={quit}>{quitting ? "Quitting…" : "Quit quiz"}</button>
       </header>
       <div className="quiz-progress"><span style={{ width: `${progress}%` }} /></div>
       <article className="quiz-card">
@@ -92,7 +112,7 @@ export function OfflineQuiz({ pack: initialPack, onComplete, onExit }: Props) {
           </>
         ) : null}
       </article>
-      <p className="offline-note">Answers are stored on this device. The completed result syncs after the result screen appears.</p>
+      <p className="offline-note">Leaving or reloading returns you to this question. Only Quit quiz discards an unfinished attempt.</p>
     </section>
   );
 }
