@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AppSidebar } from "@/components/app-sidebar";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 
@@ -58,22 +58,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="shell">
-      <aside className="sidebar">
-        <Link className="brand" href="/dashboard">
-          <span className="brand-mark">N</span>
-          <span className="brand-name">NLE Review</span>
-        </Link>
-        <nav aria-label="Main navigation">
-          <p className="nav-label">Workspace</p>
-          <Link className="nav-link active" data-short="Home" href="/dashboard"><span>Dashboard</span></Link>
-          <span className="nav-link" data-short="Quiz"><span>Take a quiz</span></span>
-          <span className="nav-link" data-short="Past"><span>Quiz history</span></span>
-          <p className="nav-label">Manage</p>
-          <span className="nav-link" data-short="Bank"><span>Question bank</span></span>
-          <span className="nav-link" data-short="Prefs"><span>Settings</span></span>
-        </nav>
-        <div className="sidebar-footer">Foundation build<br />Database-ready</div>
-      </aside>
+      <AppSidebar active="dashboard" />
 
       <main className="main">
         <header className="topbar">

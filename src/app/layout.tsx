@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "NLE Review",
-    template: "%s | NLE Review",
+    default: "NLE Reviewer",
+    template: "%s | NLE Reviewer",
   },
   description: "A focused quiz and progress tracker for board exam review.",
   icons: { icon: "/favicon.svg" },

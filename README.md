@@ -1,4 +1,4 @@
-# NLE Review LMS
+# NLE Reviewer
 
 This is the working foundation for the quiz website. It currently includes:
 
@@ -72,7 +72,11 @@ Open `http://localhost:3000/login`, sign in, and confirm that `/dashboard` loads
 npm run build
 ```
 
-The next implementation checkpoint is Question Manager: category folders, question creation, and JSONL import.
+The Question Manager supports category folders, manual and bulk formatted question entry,
+four answer choices, correct-answer selection, explanations, editing, hiding, showing, and deletion.
+
+After the initial schema, run `supabase/migrations/0002_question_manager_bulk.sql`
+once in Supabase SQL Editor before using the bulk parser or question editor.
 
 ## Main project paths
 
