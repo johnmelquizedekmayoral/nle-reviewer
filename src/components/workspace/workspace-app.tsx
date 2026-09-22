@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
 import { OfflineQuiz } from "@/components/workspace/offline-quiz";
+import { QuestionManagerPanel } from "@/components/workspace/question-manager-panel";
+import { PanelErrorBoundary } from "@/components/workspace/panel-error-boundary";
 import { clearLocalWorkspace, deleteLocal, quizKey, readLocal, workspaceKey, writeLocal } from "@/lib/offline/db";
 import type { LocalAttempt, LocalHistoryItem, LocalPreferences, OfflineQuizPack, UserRole, WorkspaceSnapshot } from "@/lib/offline/types";
 import { createClient } from "@/lib/supabase/client";
@@ -14,13 +15,22 @@ type InitialPreferences = Omit<LocalPreferences, "user_id">;
 
 const themes = ["system", "light", "dark", "midnight", "ocean", "forest", "warm", "retro", "terminal", "synthwave"];
 const accents = ["green", "blue", "purple", "teal", "orange", "pink", "red"];
-const QuestionManagerPanel = dynamic(
-  () => import("@/components/workspace/question-manager-panel").then((module) => module.QuestionManagerPanel),
-  { ssr: false, loading: () => <main className="workspace-panel"><p className="eyebrow">Opening local question bank…</p></main> },
-);
 
 async function uploadOfflinePack(pack: OfflineQuizPack) {
   return createClient().rpc("sync_offline_quiz_attempt", { p_attempt_id: pack.attempt.id, p_answers: pack.answers ?? [] });
+}
+
+function normalizeSnapshot(value: WorkspaceSnapshot): WorkspaceSnapshot {
+  return {
+    ...value,
+    categories: Array.isArray(value.categories) ? value.categories : [],
+    quiz_categories: Array.isArray(value.quiz_categories) ? value.quiz_categories : [],
+    attempts: Array.isArray(value.attempts) ? value.attempts : [],
+    history_items: Array.isArray(value.history_items) ? value.history_items : [],
+    topic_strengths: Array.isArray(value.topic_strengths) ? value.topic_strengths : [],
+    questions: Array.isArray(value.questions) ? value.questions : [],
+    users: Array.isArray(value.users) ? value.users : [],
+  };
 }
 
 export function WorkspaceApp({ userId, role, initialName, initialPreferences }: { userId: string; role: UserRole; initialName: string; initialPreferences: InitialPreferences }) {
@@ -43,9 +53,9 @@ export function WorkspaceApp({ userId, role, initialName, initialPreferences }: 
     const { data, error } = await createClient().rpc("get_workspace_bootstrap", { p_include_bank: includeBank });
     if (error || !data) setNotice(error?.message ?? "Sync failed.");
     else {
-      const incoming = data as WorkspaceSnapshot;
+      const incoming = normalizeSnapshot(data as WorkspaceSnapshot);
       const cached = includeBank ? null : await readLocal<WorkspaceSnapshot>(cacheKey);
-      const next = includeBank ? incoming : { ...incoming, questions: cached?.questions ?? [] };
+      const next = includeBank ? incoming : { ...incoming, questions: normalizeSnapshot(cached ?? incoming).questions };
       setSnapshot(next); await writeLocal(cacheKey, next); if (!silent) setNotice("Everything is up to date.");
     }
     setSyncing(false);
@@ -54,10 +64,14 @@ export function WorkspaceApp({ userId, role, initialName, initialPreferences }: 
   useEffect(() => {
     let cancelled = false;
     async function start() {
-      const cached = await readLocal<WorkspaceSnapshot>(cacheKey);
-      if (!cancelled && cached) setSnapshot(cached);
-      if (navigator.onLine) await refresh(true);
-      const activeId = await readLocal<string>(`active-quiz:${userId}`);
+      const [cached, activeId, savedPanel] = await Promise.all([
+        readLocal<WorkspaceSnapshot>(cacheKey),
+        readLocal<string>(`active-quiz:${userId}`),
+        readLocal<string>(`last-panel:${userId}`),
+      ]);
+      if (!cancelled && cached) setSnapshot(normalizeSnapshot(cached));
+      if (!cancelled && savedPanel && ["dashboard", "quiz", "history", "questions", "users", "settings"].includes(savedPanel)) setPanel(savedPanel as Panel);
+      let completedPackWasSynced = false;
       if (activeId) {
         const pack = await readLocal<OfflineQuizPack>(quizKey(activeId));
         if (!cancelled && pack && (pack.answers?.length ?? 0) < pack.items.length) setActiveQuiz(pack);
@@ -66,15 +80,18 @@ export function WorkspaceApp({ userId, role, initialName, initialPreferences }: 
           if (navigator.onLine) {
             const { data } = await uploadOfflinePack(pack);
             if (data) {
-              const incoming = data as WorkspaceSnapshot;
+              const incoming = normalizeSnapshot(data as WorkspaceSnapshot);
               const local = await readLocal<WorkspaceSnapshot>(cacheKey);
-              const next = { ...incoming, questions: local?.questions ?? [] };
+              const next = { ...incoming, questions: normalizeSnapshot(local ?? incoming).questions };
               setSnapshot(next); await writeLocal(cacheKey, next); await deleteLocal(quizKey(pack.attempt.id)); await deleteLocal(`active-quiz:${userId}`);
+              completedPackWasSynced = true;
             }
           }
         }
       }
+      if (navigator.onLine && !completedPackWasSynced) void refresh(true);
     }
+    void navigator.storage?.persist?.();
     void start();
     const handleOnline = () => { setOnline(true); void start(); };
     const handleOffline = () => setOnline(false);
@@ -82,7 +99,7 @@ export function WorkspaceApp({ userId, role, initialName, initialPreferences }: 
     return () => { cancelled = true; window.removeEventListener("online", handleOnline); window.removeEventListener("offline", handleOffline); };
   }, [cacheKey, refresh, userId]);
 
-  function choosePanel(next: Panel) { setPanel(next); setDrawerOpen(false); setNotice(null); }
+  function choosePanel(next: Panel) { setPanel(next); setDrawerOpen(false); setNotice(null); void writeLocal(`last-panel:${userId}`, next); }
 
   async function signOut() {
     await clearLocalWorkspace();
@@ -97,9 +114,9 @@ export function WorkspaceApp({ userId, role, initialName, initialPreferences }: 
     const { data, error } = await uploadOfflinePack(pack);
     if (error || !data) setNotice(`Result saved locally; sync retry needed: ${error?.message ?? "unknown error"}`);
     else {
-      const incoming = data as WorkspaceSnapshot;
+      const incoming = normalizeSnapshot(data as WorkspaceSnapshot);
       const cached = await readLocal<WorkspaceSnapshot>(cacheKey);
-      const next = { ...incoming, questions: cached?.questions ?? [] };
+      const next = { ...incoming, questions: normalizeSnapshot(cached ?? incoming).questions };
       setSnapshot(next); await writeLocal(cacheKey, next); await deleteLocal(quizKey(pack.attempt.id)); await deleteLocal(`active-quiz:${userId}`); setNotice("Quiz result synced.");
     }
     setSyncing(false);
@@ -147,7 +164,7 @@ export function WorkspaceApp({ userId, role, initialName, initialPreferences }: 
         {snapshot && panel === "dashboard" ? <DashboardPanel snapshot={snapshot} name={name} onQuiz={() => choosePanel("quiz")} /> : null}
         {snapshot && panel === "quiz" ? <QuizPanel snapshot={snapshot} preferences={preferences} online={online} result={resultQuiz} onStart={async (pack) => { setResultQuiz(null); setActiveQuiz(pack); await writeLocal(quizKey(pack.attempt.id), pack); await writeLocal(`active-quiz:${userId}`, pack.attempt.id); }} /> : null}
         {snapshot && panel === "history" ? <HistoryPanel snapshot={snapshot} /> : null}
-        {snapshot && panel === "questions" && canManageQuestions ? <QuestionManagerPanel categories={snapshot.categories} questions={snapshot.questions} onRefresh={() => refresh(true)} /> : null}
+        {snapshot && panel === "questions" && canManageQuestions ? <PanelErrorBoundary title="Question Manager"><QuestionManagerPanel categories={snapshot.categories} questions={snapshot.questions} onRefresh={() => refresh(true)} /></PanelErrorBoundary> : null}
         {snapshot && panel === "users" && canManageUsers ? <UsersPanel snapshot={snapshot} role={role} onRefresh={() => refresh(true, false)} /> : null}
         {snapshot && panel === "settings" ? <SettingsPanel name={name} preferences={preferences} onSaved={() => refresh(true, false)} /> : null}
       </div>
@@ -165,15 +182,52 @@ function DashboardPanel({ snapshot, name, onQuiz }: { snapshot: WorkspaceSnapsho
   const correct = completed.reduce((sum, attempt) => sum + attempt.correct_count, 0);
   const accuracy = total ? Math.round(correct * 100 / total) : 0;
   const best = completed.length ? Math.max(...completed.map((attempt) => Number(attempt.score_percent))) : 0;
+  const studyMinutes = Math.round(completed.reduce((sum, attempt) => sum + Number(attempt.duration_ms ?? 0), 0) / 60_000);
+  const streak = calculateStudyStreak(completed);
   const strengths = [...snapshot.topic_strengths].sort((a, b) => b.accuracy - a.accuracy);
   return <main className="workspace-panel"><header className="topbar"><div><p className="eyebrow">Local dashboard</p><h1>Welcome, {name}.</h1><p className="page-description">This panel recalculates from the data stored on your device.</p></div><button className="button" type="button" onClick={onQuiz}>New quiz</button></header>
-    <section className="metrics"><Metric label="Quizzes" value={completed.length} note="Completed" /><Metric label="Questions" value={total} note="Answered" /><Metric label="Accuracy" value={`${accuracy}%`} note="Overall" /><Metric label="Best score" value={`${Math.round(best)}%`} note="Personal best" /></section>
+    <section className="metrics dashboard-metrics"><Metric tone="violet" label="Quizzes" value={completed.length} note="Completed" /><Metric tone="blue" label="Questions" value={total} note="Answered" /><Metric tone="green" label="Accuracy" value={`${accuracy}%`} note="Overall" /><Metric tone="orange" label="Best score" value={`${Math.round(best)}%`} note="Personal best" /><Metric tone="pink" label="Study streak" value={`${streak} day${streak === 1 ? "" : "s"}`} note="Consecutive activity" /><Metric tone="teal" label="Quiz time" value={`${studyMinutes} min`} note="Recorded locally" /></section>
+    <section className="analytics-grid"><ScoreGraph attempts={completed} /><article className="panel dashboard-ring-panel"><div className="accuracy-ring" style={{ "--accuracy": `${accuracy * 3.6}deg` } as CSSProperties}><span><strong>{accuracy}%</strong><small>accuracy</small></span></div><ActivityHeatmap attempts={completed} /></article></section>
     <section className="content-grid"><article className="panel"><h2>Strongest topics</h2><StrengthList rows={strengths.slice(0, 6)} empty="More quiz data is needed." /></article><article className="panel"><h2>Needs improvement</h2><StrengthList rows={[...strengths].reverse().slice(0, 6)} empty="More quiz data is needed." /></article></section>
   </main>;
 }
 
-function Metric({ label, value, note }: { label: string; value: string | number; note: string }) { return <article className="metric"><p className="metric-label">{label}</p><p className="metric-value">{value}</p><p className="metric-foot"><span className="dot" />{note}</p></article>; }
+function Metric({ label, value, note, tone }: { label: string; value: string | number; note: string; tone: "violet" | "blue" | "green" | "orange" | "pink" | "teal" }) { return <article className={`metric colorful-metric metric-${tone}`}><p className="metric-label">{label}</p><p className="metric-value">{value}</p><p className="metric-foot"><span className="dot" />{note}</p></article>; }
 function StrengthList({ rows, empty }: { rows: WorkspaceSnapshot["topic_strengths"]; empty: string }) { return rows.length ? <div className="strength-list">{rows.map((row) => <div key={row.id}><span>{row.path}</span><strong>{row.accuracy}%</strong><i><b style={{ width: `${row.accuracy}%` }} /></i><small>{row.correct}/{row.attempts} correct</small></div>)}</div> : <p className="muted">{empty}</p>; }
+
+function dateKey(value: string | null) {
+  const date = new Date(value ?? 0);
+  return Number.isNaN(date.getTime()) ? "" : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function calculateStudyStreak(attempts: LocalAttempt[]) {
+  const days = new Set(attempts.map((attempt) => dateKey(attempt.submitted_at ?? attempt.started_at)).filter(Boolean));
+  const cursor = new Date();
+  const today = dateKey(cursor.toISOString());
+  cursor.setDate(cursor.getDate() - 1);
+  if (!days.has(today) && !days.has(dateKey(cursor.toISOString()))) return 0;
+  if (days.has(today)) cursor.setDate(cursor.getDate() + 1);
+  let streak = 0;
+  while (days.has(dateKey(cursor.toISOString()))) { streak += 1; cursor.setDate(cursor.getDate() - 1); }
+  return streak;
+}
+
+function ScoreGraph({ attempts }: { attempts: LocalAttempt[] }) {
+  const points = [...attempts].slice(0, 12).reverse();
+  const coordinates = points.map((attempt, index) => ({
+    x: points.length === 1 ? 300 : 24 + index * (552 / Math.max(points.length - 1, 1)),
+    y: 154 - Number(attempt.score_percent) * 1.3,
+    score: Math.round(Number(attempt.score_percent)),
+  }));
+  return <article className="panel score-chart"><div className="section-head"><div><p className="eyebrow">Score graph</p><h2>Recent performance</h2></div><span className="muted">Last {points.length} quizzes</span></div>{points.length ? <svg viewBox="0 0 600 180" role="img" aria-label="Recent quiz score trend from zero to one hundred percent"><line x1="24" y1="24" x2="576" y2="24" /><line x1="24" y1="89" x2="576" y2="89" /><line x1="24" y1="154" x2="576" y2="154" /><polyline points={coordinates.map((point) => `${point.x},${point.y}`).join(" ")} />{coordinates.map((point, index) => <g key={`${point.x}-${index}`}><circle cx={point.x} cy={point.y} r="6" /><text x={point.x} y={point.y - 12}>{point.score}%</text></g>)}</svg> : <p className="muted chart-empty">Complete a quiz to begin your score graph.</p>}</article>;
+}
+
+function ActivityHeatmap({ attempts }: { attempts: LocalAttempt[] }) {
+  const counts = new Map<string, number>();
+  for (const attempt of attempts) { const key = dateKey(attempt.submitted_at ?? attempt.started_at); if (key) counts.set(key, (counts.get(key) ?? 0) + 1); }
+  const days = Array.from({ length: 35 }, (_, index) => { const date = new Date(); date.setHours(12, 0, 0, 0); date.setDate(date.getDate() - (34 - index)); const key = dateKey(date.toISOString()); const count = counts.get(key) ?? 0; return { key, count, label: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }) }; });
+  return <div className="activity-heatmap"><div className="section-head"><h2>Study activity</h2><span className="muted">35 days</span></div><div className="heatmap-grid">{days.map((day) => <span className={`heat-${Math.min(day.count, 4)}`} title={`${day.label}: ${day.count} quiz${day.count === 1 ? "" : "zes"}`} aria-label={`${day.label}: ${day.count} quizzes`} key={day.key} />)}</div><small>Less <i className="heat-1" /><i className="heat-2" /><i className="heat-3" /><i className="heat-4" /> More</small></div>;
+}
 
 function QuizPanel({ snapshot, preferences, online, result, onStart }: { snapshot: WorkspaceSnapshot; preferences: LocalPreferences; online: boolean; result: OfflineQuizPack | null; onStart: (pack: OfflineQuizPack) => void }) {
   const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null);

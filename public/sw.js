@@ -1,4 +1,4 @@
-const CACHE = "nle-shell-v1";
+const CACHE = "nle-shell-v2";
 const SHELL = ["/workspace", "/favicon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -13,6 +13,10 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+});
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
@@ -20,7 +24,7 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: "no-store" })
         .then((response) => {
           if (url.pathname === "/workspace") caches.open(CACHE).then((cache) => cache.put("/workspace", response.clone()));
           return response;

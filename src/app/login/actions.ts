@@ -19,12 +19,11 @@ export async function signIn(formData: FormData) {
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data: authData, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) redirect(`/login?error=${encodeURIComponent(error.message)}`);
 
-  const { data: claimsData } = await supabase.auth.getClaims();
-  const userId = claimsData?.claims?.sub;
+  const userId = authData.user?.id;
   if (userId) {
     const [{ data: profile }, { data: preferences }] = await Promise.all([
       supabase.from("profiles").select("is_approved, is_blocked").eq("id", userId).single(),

@@ -23,6 +23,9 @@ This is the working foundation for the quiz website. It currently includes:
 - Single-page dashboard, quiz, history, question, user, and settings panels
 - Tree-based categories, unified question entry, and bulk question actions
 - Live settings preview before preferences are saved
+- Deployment-version detection that replaces stale service-worker caches automatically
+- Automatic recovery of the exact locally saved quiz question after reopening the site
+- Offline score graph, activity heatmap, accuracy ring, streak, and colorful metrics
 - Versioned PostgreSQL schema with Row Level Security
 - Tables for users, folders, questions, choices, quiz attempts, history, and per-question statistics
 
@@ -126,6 +129,18 @@ Offline operation begins only after one successful online workspace visit. Start
 a new quiz still requires a connection so the server can securely build its pack.
 Once loaded, the quiz runs locally and uploads all answers after the result screen.
 Signing out clears the local workspace and application cache from that browser.
+
+## v9 reliability update
+
+No additional Supabase migration is required after `0008_local_first_workspace.sql`.
+This update fixes mobile drawer labels, makes Question Manager part of the initial
+offline bundle, adds a full-screen login status, and checks the Vercel deployment
+version every minute and whenever the app becomes visible. When a new Git commit is
+deployed, active clients clear only the application-shell cache and reload while
+preserving IndexedDB history, preferences, question data, and active quiz progress.
+
+Devices already trapped on an older service worker may need one manual browser reload
+after this release is deployed. Future Git-pushed deployments are detected automatically.
 
 ## Deploy to Vercel
 

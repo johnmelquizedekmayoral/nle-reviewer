@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { signIn } from "./actions";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -32,7 +33,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             Password
             <input name="password" type="password" autoComplete="current-password" minLength={6} required />
           </label>
-          <button className="button" type="submit">Sign in</button>
+          <FormSubmitButton pendingLabel="Signing in…" overlay>Sign in</FormSubmitButton>
         </form>
         <p className="auth-switch">New here? <Link href="/signup">Create an account</Link></p>
       </section>
