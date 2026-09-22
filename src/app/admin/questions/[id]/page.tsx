@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { requireStaff } from "@/lib/auth/require-staff";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { updateQuestion } from "../actions";
@@ -57,7 +58,7 @@ export default async function EditQuestionPage({ params, searchParams }: EditQue
   if (!isSupabaseConfigured()) redirect("/dashboard");
 
   const [{ id }, { error: pageError }] = await Promise.all([params, searchParams]);
-  const { supabase } = await requireStaff();
+  const { supabase, role } = await requireStaff();
   const [{ data: categoryData }, { data: questionData }] = await Promise.all([
     supabase
       .from("categories")
@@ -86,7 +87,7 @@ export default async function EditQuestionPage({ params, searchParams }: EditQue
 
   return (
     <div className="shell">
-      <AppSidebar active="questions" />
+      <AppSidebar active="questions" role={role} />
 
       <main className="main admin-main edit-main">
         <header className="admin-header">
@@ -174,7 +175,7 @@ export default async function EditQuestionPage({ params, searchParams }: EditQue
             </div>
 
             <div className="form-actions">
-              <button className="button" type="submit">Save changes</button>
+              <FormSubmitButton pendingLabel="Saving question…">Save changes</FormSubmitButton>
               <Link className="button button-secondary" href="/admin/questions">Cancel</Link>
             </div>
           </form>

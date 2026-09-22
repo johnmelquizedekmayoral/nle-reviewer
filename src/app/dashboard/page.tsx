@@ -9,10 +9,16 @@ export const metadata: Metadata = { title: "Dashboard" };
 
 type DashboardData = {
   name: string;
+  role: "learner" | "instructor" | "admin" | "superadmin";
   quizzes: number;
   questions: number;
   accuracy: number;
   studyMinutes: number;
+  bestScore: number;
+  averageResponseSeconds: number;
+  masteredQuestions: number;
+  weakQuestions: number;
+  recentTrend: number | null;
   recentAttempts: Array<{
     id: string;
     title: string | null;
@@ -27,10 +33,16 @@ async function getDashboardData(): Promise<DashboardData> {
   if (!isSupabaseConfigured()) {
     return {
       name: "Learner",
+      role: "learner",
       quizzes: 0,
       questions: 0,
       accuracy: 0,
       studyMinutes: 0,
+      bestScore: 0,
+      averageResponseSeconds: 0,
+      masteredQuestions: 0,
+      weakQuestions: 0,
+      recentTrend: null,
       recentAttempts: [],
     };
   }
@@ -40,26 +52,57 @@ async function getDashboardData(): Promise<DashboardData> {
   const userId = claimsData?.claims?.sub;
   if (!userId) redirect("/login");
 
-  const [{ data: profile }, { data: attempts }] = await Promise.all([
-    supabase.from("profiles").select("display_name").eq("id", userId).maybeSingle(),
+  const [{ data: profile }, { data: attempts }, { data: stats }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("display_name, role, is_approved, is_blocked")
+      .eq("id", userId)
+      .maybeSingle(),
     supabase
       .from("quiz_attempts")
       .select("id, title, total_questions, correct_count, score_percent, submitted_at, duration_ms")
       .eq("status", "submitted")
       .order("submitted_at", { ascending: false }),
+    supabase
+      .from("user_question_stats")
+      .select("times_seen, times_correct, times_wrong, total_response_time_ms, current_correct_streak")
+      .eq("user_id", userId),
   ]);
+
+  if (!profile?.is_approved || profile.is_blocked) redirect("/pending-approval");
 
   const rows = attempts ?? [];
   const questions = rows.reduce((sum, row) => sum + row.total_questions, 0);
   const correct = rows.reduce((sum, row) => sum + row.correct_count, 0);
   const duration = rows.reduce((sum, row) => sum + (row.duration_ms ?? 0), 0);
+  const statRows = stats ?? [];
+  const totalSeen = statRows.reduce((sum, row) => sum + row.times_seen, 0);
+  const totalResponseTime = statRows.reduce(
+    (sum, row) => sum + Number(row.total_response_time_ms),
+    0,
+  );
+  const recentAverage = rows.length
+    ? rows.slice(0, 5).reduce((sum, row) => sum + Number(row.score_percent), 0) / Math.min(rows.length, 5)
+    : 0;
+  const previousRows = rows.slice(5, 10);
+  const previousAverage = previousRows.length
+    ? previousRows.reduce((sum, row) => sum + Number(row.score_percent), 0) / previousRows.length
+    : null;
 
   return {
     name: profile?.display_name || "Learner",
+    role: profile?.role ?? "learner",
     quizzes: rows.length,
     questions,
     accuracy: questions ? Math.round((correct / questions) * 100) : 0,
     studyMinutes: Math.round(duration / 60000),
+    bestScore: rows.length ? Math.round(Math.max(...rows.map((row) => Number(row.score_percent)))) : 0,
+    averageResponseSeconds: totalSeen ? Math.round(totalResponseTime / totalSeen / 100) / 10 : 0,
+    masteredQuestions: statRows.filter(
+      (row) => row.times_seen >= 2 && row.times_correct / row.times_seen >= 0.8,
+    ).length,
+    weakQuestions: statRows.filter((row) => row.times_wrong > row.times_correct).length,
+    recentTrend: previousAverage === null ? null : Math.round(recentAverage - previousAverage),
     recentAttempts: rows.slice(0, 5).map((attempt) => ({
       id: attempt.id,
       title: attempt.title,
@@ -79,11 +122,15 @@ export default async function DashboardPage() {
     ["Questions answered", data.questions, "Across all subjects"],
     ["Overall accuracy", `${data.accuracy}%`, "Based on submitted quizzes"],
     ["Study time", `${data.studyMinutes} min`, "Recorded quiz time"],
+    ["Best score", `${data.bestScore}%`, "Highest completed quiz"],
+    ["Avg. response", `${data.averageResponseSeconds}s`, "Time per answered question"],
+    ["Mastered questions", data.masteredQuestions, "80%+ after multiple attempts"],
+    ["Weak questions", data.weakQuestions, "More wrong than correct"],
   ];
 
   return (
     <div className="shell">
-      <AppSidebar active="dashboard" />
+      <AppSidebar active="dashboard" role={data.role} />
 
       <main className="main">
         <header className="topbar">
@@ -160,12 +207,17 @@ export default async function DashboardPage() {
             )}
           </article>
 
-          <article className="panel">
-            <h2>Readiness foundation</h2>
-            <div className="readiness-ring" aria-label="No readiness data yet" />
-            <p className="muted" style={{ textAlign: "center", lineHeight: 1.6 }}>
-              Readiness will be calculated only after enough reliable attempt data has been collected.
-            </p>
+          <article className="panel insight-panel">
+            <h2>Performance insights</h2>
+            <div className="insight-score">
+              <strong>{data.accuracy}%</strong>
+              <span>overall accuracy</span>
+            </div>
+            <div className="insight-list">
+              <p><span>Recent trend</span><strong>{data.recentTrend === null ? "More data needed" : `${data.recentTrend >= 0 ? "+" : ""}${data.recentTrend} pts`}</strong></p>
+              <p><span>Mastered</span><strong>{data.masteredQuestions} questions</strong></p>
+              <p><span>Needs review</span><strong>{data.weakQuestions} questions</strong></p>
+            </div>
           </article>
         </section>
       </main>

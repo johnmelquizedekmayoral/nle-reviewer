@@ -12,6 +12,10 @@ This is the working foundation for the quiz website. It currently includes:
 - Account-based theme, accent color, text size, and reduced-motion settings
 - Public email/password registration through Supabase Auth
 - Admin-controlled learner and instructor role assignment
+- Administrator approval required before new accounts can enter the app
+- Scrollable quiz review with All, Correct, and Wrong filters
+- Responsive mobile bottom navigation and global loading notifications
+- Advanced performance, mastery, response-time, and weakness metrics
 - Versioned PostgreSQL schema with Row Level Security
 - Tables for users, folders, questions, choices, quiz attempts, history, and per-question statistics
 
@@ -89,6 +93,10 @@ quiz creation, secure answer submission, instant explanations, and saved scores.
 
 Run `supabase/migrations/0004_signup_and_roles.sql` once to enable the secure
 administrator user directory and role assignment.
+
+Run `supabase/migrations/0005_access_approval.sql` once to add account approval,
+repair the user-directory functions, and enforce approved quiz access. Existing
+learner accounts enter the approval queue; existing staff accounts remain approved.
 
 ## Deploy to Vercel
 

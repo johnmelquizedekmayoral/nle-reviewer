@@ -33,8 +33,7 @@ export async function signUp(formData: FormData) {
   });
 
   if (error) redirect(`/signup?error=${encodeURIComponent(error.message)}`);
-  if (data.session) redirect("/dashboard");
+  if (data.session) redirect("/pending-approval");
 
   redirect("/login?success=Check%20your%20email%20and%20confirm%20your%20account%20before%20signing%20in.");
 }
-

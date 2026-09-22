@@ -27,7 +27,7 @@ function formatDuration(durationMs: number | null) {
 }
 
 export default async function HistoryPage() {
-  const { supabase, userId } = await requireUser();
+  const { supabase, userId, role } = await requireUser();
   const { data, error } = await supabase
     .from("quiz_attempts")
     .select(
@@ -47,7 +47,7 @@ export default async function HistoryPage() {
 
   return (
     <div className="shell">
-      <AppSidebar active="history" />
+      <AppSidebar active="history" role={role} />
 
       <main className="main history-main">
         <header className="admin-header">
@@ -114,7 +114,7 @@ export default async function HistoryPage() {
                   {attempt.status === "abandoned" ? (
                     <span className="history-unavailable">Closed</span>
                   ) : (
-                    <Link className="button button-secondary" href={`/quiz/${attempt.id}?position=${targetPosition}`}>
+                  <Link className="button button-secondary" href={isComplete ? `/history/${attempt.id}` : `/quiz/${attempt.id}?position=${targetPosition}`}>
                       {isComplete ? "Review" : "Continue"}
                     </Link>
                   )}

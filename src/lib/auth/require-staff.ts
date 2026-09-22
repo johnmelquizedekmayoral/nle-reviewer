@@ -12,11 +12,12 @@ export async function requireStaff() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, is_approved, is_blocked")
     .eq("id", userId)
     .single();
 
-  if (!profile || !staffRoles.has(profile.role)) redirect("/dashboard");
+  if (!profile?.is_approved || profile.is_blocked) redirect("/pending-approval");
+  if (!staffRoles.has(profile.role)) redirect("/dashboard");
 
   return { supabase, userId, role: profile.role };
 }

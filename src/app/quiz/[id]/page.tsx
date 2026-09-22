@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { requireUser } from "@/lib/auth/require-user";
 import { submitQuizAnswer } from "../actions";
 
@@ -48,7 +49,7 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
     redirect(`/quiz/${id}?position=1`);
   }
 
-  const { supabase } = await requireUser();
+  const { supabase, role } = await requireUser();
   const { data, error } = await supabase.rpc("get_quiz_attempt_item", {
     p_attempt_id: id,
     p_position: requestedPosition,
@@ -57,7 +58,7 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
   if (error) {
     return (
       <div className="shell">
-        <AppSidebar active="quiz" />
+        <AppSidebar active="quiz" role={role} />
         <main className="main quiz-main">
           <p className="notice notice-error">{error.message}</p>
           <Link className="button button-secondary" href="/quiz/new">Start another quiz</Link>
@@ -82,7 +83,7 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
 
   return (
     <div className="shell">
-      <AppSidebar active="quiz" />
+      <AppSidebar active="quiz" role={role} />
 
       <main className="main quiz-main">
         <header className="quiz-top">
@@ -154,7 +155,9 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
                 ))}
               </fieldset>
 
-              <button className="button quiz-submit" type="submit">Check answer</button>
+              <FormSubmitButton className="button quiz-submit" pendingLabel="Checking answer…">
+                Check answer
+              </FormSubmitButton>
             </form>
           )}
 

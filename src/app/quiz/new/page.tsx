@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { requireUser } from "@/lib/auth/require-user";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createQuiz } from "../actions";
@@ -23,13 +24,16 @@ export default async function NewQuizPage({ searchParams }: NewQuizPageProps) {
   if (!isSupabaseConfigured()) redirect("/dashboard");
 
   const { error: pageError } = await searchParams;
-  const { supabase } = await requireUser();
-  const { data, error } = await supabase.rpc("get_quiz_categories");
+  const { supabase, userId, role } = await requireUser();
+  const [{ data, error }, { data: preferences }] = await Promise.all([
+    supabase.rpc("get_quiz_categories"),
+    supabase.from("user_preferences").select("default_quiz_size").eq("user_id", userId).single(),
+  ]);
   const categories = (data ?? []) as QuizCategory[];
 
   return (
     <div className="shell">
-      <AppSidebar active="quiz" />
+      <AppSidebar active="quiz" role={role} />
 
       <main className="main quiz-setup-main">
         <header className="admin-header">
@@ -67,7 +71,7 @@ export default async function NewQuizPage({ searchParams }: NewQuizPageProps) {
                   type="number"
                   min={1}
                   max={100}
-                  defaultValue={10}
+                  defaultValue={preferences?.default_quiz_size ?? 20}
                   required
                 />
               </label>
@@ -77,7 +81,7 @@ export default async function NewQuizPage({ searchParams }: NewQuizPageProps) {
                 <p>After every answer, you will see whether it is correct and read the explanation.</p>
               </div>
 
-              <button className="button" type="submit">Begin quiz</button>
+              <FormSubmitButton pendingLabel="Preparing quiz…">Begin quiz</FormSubmitButton>
             </form>
           </article>
         ) : (

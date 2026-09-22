@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { requireStaff } from "@/lib/auth/require-staff";
-import { updateUserRole } from "./actions";
+import { updateUserApproval, updateUserRole } from "./actions";
 
 export const metadata: Metadata = { title: "Users & Roles" };
 export const dynamic = "force-dynamic";
@@ -12,6 +13,7 @@ type UserProfile = {
   email: string;
   display_name: string;
   role: "learner" | "instructor" | "admin" | "superadmin";
+  is_approved: boolean;
   is_blocked: boolean;
   created_at: string;
 };
@@ -33,7 +35,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
 
   return (
     <div className="shell">
-      <AppSidebar active="users" />
+      <AppSidebar active="users" role={role} />
 
       <main className="main admin-main">
         <header className="admin-header">
@@ -47,7 +49,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
           <div className="header-stat"><strong>{users.length}</strong><span>accounts</span></div>
         </header>
 
-        {query.saved ? <p className="notice notice-success">User role updated.</p> : null}
+        {query.saved ? <p className="notice notice-success">User access updated.</p> : null}
         {query.error ? <p className="notice notice-error">{query.error}</p> : null}
         {error ? <p className="notice notice-error">{error.message}</p> : null}
 
@@ -67,19 +69,36 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                   </div>
                 </div>
 
-                <span className={`role-badge role-${user.role}`}>{user.role}</span>
+                <div className="user-badges">
+                  <span className={`role-badge role-${user.role}`}>{user.role}</span>
+                  <span className={`role-badge ${user.is_approved ? "status-published" : "status-draft"}`}>
+                    {user.is_approved ? "Approved" : "Pending"}
+                  </span>
+                </div>
 
                 {canEdit ? (
-                  <form className="role-form" action={updateUserRole}>
-                    <input type="hidden" name="user_id" value={user.user_id} />
-                    <label className="sr-only" htmlFor={`role-${user.user_id}`}>Role for {user.display_name}</label>
-                    <select id={`role-${user.user_id}`} name="role" defaultValue={user.role}>
-                      {assignableRoles.map((assignableRole) => (
-                        <option value={assignableRole} key={assignableRole}>{assignableRole}</option>
-                      ))}
-                    </select>
-                    <button className="row-action" type="submit">Save role</button>
-                  </form>
+                  <div className="user-actions">
+                    <form className="role-form" action={updateUserRole}>
+                      <input type="hidden" name="user_id" value={user.user_id} />
+                      <label className="sr-only" htmlFor={`role-${user.user_id}`}>Role for {user.display_name}</label>
+                      <select id={`role-${user.user_id}`} name="role" defaultValue={user.role}>
+                        {assignableRoles.map((assignableRole) => (
+                          <option value={assignableRole} key={assignableRole}>{assignableRole}</option>
+                        ))}
+                      </select>
+                      <FormSubmitButton className="row-action" pendingLabel="Saving role…">Save role</FormSubmitButton>
+                    </form>
+                    <form action={updateUserApproval}>
+                      <input type="hidden" name="user_id" value={user.user_id} />
+                      <input type="hidden" name="is_approved" value={user.is_approved ? "false" : "true"} />
+                      <FormSubmitButton
+                        className={`row-action ${user.is_approved ? "row-action-danger" : ""}`}
+                        pendingLabel={user.is_approved ? "Revoking access…" : "Approving access…"}
+                      >
+                        {user.is_approved ? "Revoke access" : "Approve access"}
+                      </FormSubmitButton>
+                    </form>
+                  </div>
                 ) : (
                   <span className="role-locked">Protected</span>
                 )}
@@ -91,4 +110,3 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
     </div>
   );
 }
-

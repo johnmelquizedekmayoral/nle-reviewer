@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { DeleteQuestionForm } from "@/components/questions/delete-question-form";
 import { requireStaff } from "@/lib/auth/require-staff";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -55,7 +56,7 @@ export default async function QuestionManagerPage({ searchParams }: QuestionMana
   if (!isSupabaseConfigured()) redirect("/dashboard");
 
   const { success, error } = await searchParams;
-  const { supabase } = await requireStaff();
+  const { supabase, role } = await requireStaff();
   const [{ data: categoryData }, { data: questionData }] = await Promise.all([
     supabase
       .from("categories")
@@ -83,7 +84,7 @@ export default async function QuestionManagerPage({ searchParams }: QuestionMana
 
   return (
     <div className="shell">
-      <AppSidebar active="questions" />
+      <AppSidebar active="questions" role={role} />
 
       <main className="main admin-main">
         <header className="admin-header">
@@ -146,7 +147,7 @@ export default async function QuestionManagerPage({ searchParams }: QuestionMana
                 </label>
               </div>
 
-              <button className="button" type="submit">Create category</button>
+              <FormSubmitButton pendingLabel="Creating category…">Create category</FormSubmitButton>
             </form>
           </article>
 
@@ -237,9 +238,9 @@ export default async function QuestionManagerPage({ searchParams }: QuestionMana
                 </label>
               </div>
 
-              <button className="button" type="submit" disabled={!categories.length}>
+              <FormSubmitButton pendingLabel="Saving question…" disabled={!categories.length}>
                 Save question
-              </button>
+              </FormSubmitButton>
             </form>
           </article>
         </section>
@@ -297,9 +298,9 @@ export default async function QuestionManagerPage({ searchParams }: QuestionMana
               />
             </label>
 
-            <button className="button" type="submit" disabled={!categories.length}>
+            <FormSubmitButton pendingLabel="Importing questions…" disabled={!categories.length}>
               Parse and add questions
-            </button>
+            </FormSubmitButton>
           </form>
         </section>
 
@@ -340,9 +341,9 @@ export default async function QuestionManagerPage({ searchParams }: QuestionMana
                             type="hidden"
                             value={question.status === "published" ? "draft" : "published"}
                           />
-                          <button className="row-action" type="submit">
+                          <FormSubmitButton className="row-action" pendingLabel="Updating visibility…">
                             {question.status === "published" ? "Hide" : "Show"}
-                          </button>
+                          </FormSubmitButton>
                         </form>
                         <DeleteQuestionForm action={deleteQuestion} questionId={question.id} />
                       </div>

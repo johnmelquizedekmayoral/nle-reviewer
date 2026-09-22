@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AppSidebar } from "@/components/app-sidebar";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { requireUser } from "@/lib/auth/require-user";
 import { saveSettings } from "./actions";
 
@@ -12,12 +13,12 @@ type SettingsPageProps = {
 
 export default async function SettingsPage({ searchParams }: SettingsPageProps) {
   const query = await searchParams;
-  const { supabase, userId } = await requireUser();
+  const { supabase, userId, role } = await requireUser();
   const [{ data: profile }, { data: preferences }] = await Promise.all([
     supabase.from("profiles").select("display_name").eq("id", userId).single(),
     supabase
       .from("user_preferences")
-      .select("theme, accent_color, font_scale, reduced_motion")
+      .select("theme, accent_color, font_scale, reduced_motion, default_quiz_size")
       .eq("user_id", userId)
       .single(),
   ]);
@@ -28,7 +29,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
 
   return (
     <div className="shell">
-      <AppSidebar active="settings" />
+      <AppSidebar active="settings" role={role} />
 
       <main className="main settings-main">
         <header className="admin-header">
@@ -93,6 +94,10 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
                 ["green", "Green"],
                 ["blue", "Blue"],
                 ["purple", "Purple"],
+                ["teal", "Teal"],
+                ["orange", "Orange"],
+                ["pink", "Pink"],
+                ["red", "Red"],
               ].map(([value, label]) => (
                 <label className="setting-choice" key={value}>
                   <input
@@ -130,8 +135,27 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
             </label>
           </section>
 
+          <section className="form-card settings-section">
+            <div>
+              <p className="step-number">QUIZZES</p>
+              <h2>Quiz defaults</h2>
+              <p className="form-help">Used as the suggested size whenever you start a new quiz.</p>
+            </div>
+            <label className="field">
+              Default number of questions
+              <input
+                name="default_quiz_size"
+                type="number"
+                min={5}
+                max={100}
+                defaultValue={preferences?.default_quiz_size ?? 20}
+                required
+              />
+            </label>
+          </section>
+
           <div className="settings-save">
-            <button className="button" type="submit">Save settings</button>
+            <FormSubmitButton pendingLabel="Saving settings…">Save settings</FormSubmitButton>
           </div>
         </form>
       </main>

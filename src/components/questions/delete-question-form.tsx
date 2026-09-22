@@ -1,5 +1,7 @@
 "use client";
 
+import { FormSubmitButton } from "@/components/form-submit-button";
+
 type DeleteQuestionFormProps = {
   questionId: string;
   action: (formData: FormData) => void | Promise<void>;
@@ -16,9 +18,9 @@ export function DeleteQuestionForm({ questionId, action }: DeleteQuestionFormPro
       }}
     >
       <input name="question_id" type="hidden" value={questionId} />
-      <button className="row-action row-action-danger" type="submit">
+      <FormSubmitButton className="row-action row-action-danger" pendingLabel="Deleting question…">
         Delete
-      </button>
+      </FormSubmitButton>
     </form>
   );
 }
