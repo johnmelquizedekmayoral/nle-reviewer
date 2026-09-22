@@ -17,7 +17,7 @@ export async function requireStaff() {
     .single();
 
   if (!profile?.is_approved || profile.is_blocked) redirect("/pending-approval");
-  if (!staffRoles.has(profile.role)) redirect("/dashboard");
+  if (!staffRoles.has(profile.role)) redirect("/workspace");
 
   return { supabase, userId, role: profile.role };
 }

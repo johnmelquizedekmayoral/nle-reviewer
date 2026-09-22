@@ -1157,3 +1157,88 @@ label.quiz-choice:hover { border-color: #9aabb5; background: var(--surface-muted
   .review-choice { grid-template-columns: 30px minmax(0, 1fr); }
   .review-choice > strong { grid-column: 2; }
 }
+
+/* Local-first single-page workspace */
+.workspace-shell { min-height: 100vh; display: grid; grid-template-columns: 248px minmax(0, 1fr); }
+.workspace-sidebar {
+  position: sticky; z-index: 50; top: 0; height: 100vh; padding: 28px 20px;
+  background: var(--nav); color: white; display: flex; flex-direction: column;
+}
+.workspace-brand { width: 100%; border: 0; background: transparent; color: white; cursor: pointer; }
+.workspace-sidebar nav { display: grid; gap: 3px; }
+.workspace-sidebar .nav-link { width: 100%; border: 0; text-align: left; cursor: pointer; font: inherit; }
+.workspace-connection { margin-top: auto; padding: 14px 10px; border-top: 1px solid #183240; color: var(--nav-muted); display: grid; grid-template-columns: 9px 1fr; align-items: center; gap: 7px; font-size: .78rem; }
+.workspace-connection > span { width: 8px; height: 8px; border-radius: 50%; }
+.workspace-connection > span.online { background: #31d07c; box-shadow: 0 0 0 4px rgb(49 208 124 / 12%); }
+.workspace-connection > span.offline { background: #f4ad3d; }
+.workspace-connection button { grid-column: 1 / -1; min-height: 34px; border: 1px solid #294252; border-radius: 8px; background: #102633; color: white; cursor: pointer; }
+.workspace-sidebar > .sidebar-signout { margin: 8px 10px 0; text-align: left; }
+.workspace-stage { min-width: 0; }
+.workspace-panel { width: 100%; min-height: 100vh; padding: 36px clamp(22px, 4vw, 58px) 60px; }
+.workspace-toast { position: fixed; z-index: 200; top: 18px; right: 18px; max-width: min(390px, calc(100vw - 36px)); padding: 12px 16px; border: 1px solid #294252; border-radius: 12px; background: var(--nav); color: white; box-shadow: 0 18px 45px rgb(0 0 0 / 22%); font-size: .82rem; font-weight: 700; }
+.sync-badge { padding: 9px 12px; border-radius: 999px; background: var(--surface-muted); color: var(--muted); font-size: .75rem; font-weight: 800; }
+.mobile-menu-button, .drawer-backdrop { display: none; }
+.skeleton-grid { margin-top: 26px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.skeleton-grid i { height: 140px; border-radius: var(--radius); background: linear-gradient(100deg, var(--surface-muted), var(--surface), var(--surface-muted)); background-size: 220% 100%; animation: skeleton 1.2s linear infinite; }
+@keyframes skeleton { to { background-position: -220% 0; } }
+
+.strength-list { margin-top: 18px; display: grid; gap: 16px; }
+.strength-list > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 12px; }
+.strength-list span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; font-weight: 700; }
+.strength-list strong { color: var(--signal-dark); }
+.strength-list i { grid-column: 1 / -1; height: 7px; overflow: hidden; border-radius: 99px; background: var(--surface-muted); }
+.strength-list b { display: block; height: 100%; border-radius: inherit; background: var(--signal); }
+.strength-list small { grid-column: 1 / -1; color: var(--muted); }
+
+.workspace-quiz { min-height: 100vh; padding: 36px clamp(22px, 5vw, 72px) 60px; }
+.offline-note { margin: 14px auto 0; max-width: 900px; color: var(--muted); font-size: .78rem; text-align: center; }
+.quiz-result-card { max-width: 620px; margin: 10vh auto 0; padding: 54px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); text-align: center; box-shadow: 0 20px 65px rgb(25 48 62 / 9%); }
+.quiz-result-card h1 { margin: 16px 0 8px; color: var(--signal-dark); font-size: clamp(4rem, 13vw, 7rem); }
+
+.question-manager-layout { margin-top: 22px; display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 18px; align-items: start; }
+.tree-panel { position: sticky; top: 20px; max-height: calc(100vh - 40px); overflow: auto; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.tree-panel h2 { margin-bottom: 14px; }
+.category-tree { display: grid; gap: 2px; }
+.tree-row { min-height: 36px; border-radius: 8px; display: flex; align-items: center; }
+.tree-row:hover, .tree-row.active, .tree-all.active { background: var(--surface-muted); color: var(--signal-dark); }
+.tree-toggle, .tree-name, .tree-all { border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; }
+.tree-toggle { width: 27px; flex: 0 0 auto; color: var(--muted); }
+.tree-toggle:disabled { cursor: default; }
+.tree-name { min-width: 0; flex: 1; padding: 8px 4px; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; font-weight: 680; }
+.tree-all { width: 100%; min-height: 38px; padding: 0 10px; border-radius: 8px; text-align: left; font-weight: 750; }
+.question-manager-content { min-width: 0; display: grid; gap: 16px; }
+.segmented-control { width: fit-content; padding: 4px; border-radius: 11px; background: var(--surface-muted); display: flex; }
+.segmented-control button { min-height: 38px; padding: 0 16px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-weight: 750; }
+.segmented-control button.active { background: var(--surface); color: var(--ink); box-shadow: 0 4px 14px rgb(0 0 0 / 8%); }
+.bulk-toolbar { position: sticky; z-index: 8; top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(12px); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bulk-toolbar strong { margin-right: auto; font-size: .8rem; }
+.question-search { min-width: min(250px, 100%); min-height: 36px; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.bulk-toolbar button, .bulk-toolbar select, .user-actions button, .user-actions select { min-height: 36px; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: .76rem; font-weight: 700; }
+.bulk-toolbar button.danger { color: var(--error-ink); }
+.local-question-list .question-row { grid-template-columns: 22px minmax(0, 1fr) auto; }
+.local-question-list .question-row { content-visibility: auto; contain-intrinsic-size: 88px; }
+.local-question-list input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--signal-dark); }
+.question-limit-note { padding: 12px; text-align: center; }
+
+@media (max-width: 980px) {
+  .workspace-shell { grid-template-columns: 210px minmax(0, 1fr); }
+  .question-manager-layout { grid-template-columns: 220px minmax(0, 1fr); }
+  .skeleton-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 720px) {
+  .workspace-shell { display: block; }
+  .workspace-sidebar { position: fixed; top: 0; bottom: 0; left: 0; width: min(50vw, 280px); height: 100dvh; padding-inline: 12px; transform: translateX(-105%); transition: transform 180ms ease; box-shadow: 20px 0 60px rgb(0 0 0 / 28%); }
+  .workspace-sidebar .brand { padding-inline: 2px; gap: 8px; }
+  .workspace-sidebar .brand-name { font-size: .84rem; }
+  .workspace-sidebar .nav-link { padding-inline: 9px; font-size: .78rem; }
+  .workspace-sidebar.open { transform: translateX(0); }
+  .mobile-menu-button { position: fixed; z-index: 45; top: 14px; left: 14px; width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); display: grid; place-items: center; box-shadow: 0 8px 24px rgb(0 0 0 / 10%); cursor: pointer; }
+  .drawer-backdrop { position: fixed; z-index: 40; inset: 0; border: 0; background: rgb(0 0 0 / 46%); display: block; }
+  .workspace-panel, .workspace-quiz { padding: 76px 16px 40px; }
+  .workspace-toast { top: 68px; right: 12px; }
+  .question-manager-layout { grid-template-columns: 1fr; }
+  .tree-panel { position: static; max-height: 320px; }
+  .local-question-list .question-row { grid-template-columns: 22px minmax(0, 1fr); }
+  .local-question-list .question-controls { grid-column: 2; }
+  .skeleton-grid { grid-template-columns: 1fr; }
+}

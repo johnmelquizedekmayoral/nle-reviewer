@@ -19,7 +19,7 @@ export default async function PendingApprovalPage() {
     .eq("id", userId)
     .single();
 
-  if (profile?.is_approved && !profile.is_blocked) redirect("/dashboard");
+  if (profile?.is_approved && !profile.is_blocked) redirect("/workspace");
 
   return (
     <main className="auth-page">

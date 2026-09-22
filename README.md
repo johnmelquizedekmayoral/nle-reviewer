@@ -18,6 +18,11 @@ This is the working foundation for the quiz website. It currently includes:
 - Advanced performance, mastery, response-time, and weakness metrics
 - Ten appearance themes spanning clean, modern, natural, retro, terminal, and synthwave styles
 - One-request quiz answers with the next question preloaded (no full page reload)
+- Local-first authenticated workspace backed by IndexedDB
+- Offline-ready quiz packs with batched result synchronization
+- Single-page dashboard, quiz, history, question, user, and settings panels
+- Tree-based categories, unified question entry, and bulk question actions
+- Live settings preview before preferences are saved
 - Versioned PostgreSQL schema with Row Level Security
 - Tables for users, folders, questions, choices, quiz attempts, history, and per-question statistics
 
@@ -106,6 +111,21 @@ the additional appearance themes in Settings.
 Run `supabase/migrations/0007_fast_quiz.sql` once to enable the faster quiz runner.
 It saves the answer, returns feedback, and preloads the next question in one direct
 Supabase request instead of reloading the entire Next.js route after every answer.
+
+Run `supabase/migrations/0008_local_first_workspace.sql` once to enable the
+local-first workspace, offline quiz packs, batched quiz synchronization, topic
+strength data, and bulk question actions. Login now opens `/workspace`.
+
+The first workspace visit downloads the account's preferences, history, metrics,
+and categories. Staff accounts also download the question bank. Later panel changes
+read IndexedDB immediately and synchronization runs separately. Learners download
+only the quiz packs they start; the entire answer bank is deliberately not exposed
+to learner browser storage.
+
+Offline operation begins only after one successful online workspace visit. Starting
+a new quiz still requires a connection so the server can securely build its pack.
+Once loaded, the quiz runs locally and uploads all answers after the result screen.
+Signing out clears the local workspace and application cache from that browser.
 
 ## Deploy to Vercel
 

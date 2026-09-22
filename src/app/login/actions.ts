@@ -45,7 +45,7 @@ export async function signIn(formData: FormData) {
       maxAge: 31536000,
     });
   }
-  redirect("/dashboard");
+  redirect("/workspace");
 }
 
 export async function signOut() {

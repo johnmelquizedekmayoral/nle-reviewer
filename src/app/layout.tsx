@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { cookies } from "next/headers";
 import { APPEARANCE_COOKIE, parseAppearance } from "@/lib/appearance";
+import { ServiceWorkerRegister } from "@/components/offline/service-worker-register";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -37,7 +38,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       data-reduced-motion={appearance.reducedMotion ? "true" : "false"}
       style={{ "--user-font-scale": appearance.fontScale } as CSSProperties}
     >
-      <body>{children}</body>
+      <body><ServiceWorkerRegister />{children}</body>
     </html>
   );
 }
