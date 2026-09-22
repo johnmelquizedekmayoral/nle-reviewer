@@ -16,6 +16,8 @@ This is the working foundation for the quiz website. It currently includes:
 - Scrollable quiz review with All, Correct, and Wrong filters
 - Responsive mobile bottom navigation and global loading notifications
 - Advanced performance, mastery, response-time, and weakness metrics
+- Ten appearance themes spanning clean, modern, natural, retro, terminal, and synthwave styles
+- One-request quiz answers with the next question preloaded (no full page reload)
 - Versioned PostgreSQL schema with Row Level Security
 - Tables for users, folders, questions, choices, quiz attempts, history, and per-question statistics
 
@@ -98,6 +100,13 @@ Run `supabase/migrations/0005_access_approval.sql` once to add account approval,
 repair the user-directory functions, and enforce approved quiz access. Existing
 learner accounts enter the approval queue; existing staff accounts remain approved.
 
+Run `supabase/migrations/0006_expanded_themes.sql` once before selecting one of
+the additional appearance themes in Settings.
+
+Run `supabase/migrations/0007_fast_quiz.sql` once to enable the faster quiz runner.
+It saves the answer, returns feedback, and preloads the next question in one direct
+Supabase request instead of reloading the entire Next.js route after every answer.
+
 ## Deploy to Vercel
 
 1. Import the `johnmelquizedekmayoral/nle-reviewer` GitHub repository in Vercel.
@@ -108,6 +117,11 @@ learner accounts enter the approval queue; existing staff accounts remain approv
    production Vercel address and add the same address to Redirect URLs.
 5. In **Authentication → Providers → Email**, allow new-user signups and keep
    email confirmation enabled for public registration.
+
+For the lowest server-side latency, check the Supabase project region and choose
+the closest available Vercel Function Region under **Project Settings → Functions**.
+The browser-based quiz answer path talks directly to Supabase, but matching regions
+still improves dashboard, history, settings, and administration requests.
 
 The service-role key is not required for deployment and must never be exposed
 as a `NEXT_PUBLIC_` environment variable.

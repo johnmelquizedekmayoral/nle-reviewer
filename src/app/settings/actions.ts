@@ -6,7 +6,18 @@ import { cookies } from "next/headers";
 import { APPEARANCE_COOKIE } from "@/lib/appearance";
 import { requireUser } from "@/lib/auth/require-user";
 
-const themes = new Set(["light", "dark", "system"]);
+const themes = new Set([
+  "light",
+  "dark",
+  "system",
+  "midnight",
+  "ocean",
+  "forest",
+  "warm",
+  "retro",
+  "terminal",
+  "synthwave",
+]);
 const accents = new Set(["green", "blue", "purple", "teal", "orange", "pink", "red"]);
 const fontScales = new Set([0.9, 1, 1.1, 1.2]);
 

@@ -70,16 +70,24 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               <h2>Theme</h2>
               <p className="form-help">System follows your computer’s light or dark setting.</p>
             </div>
-            <fieldset className="settings-options">
+            <fieldset className="settings-options theme-options">
               <legend className="sr-only">Theme</legend>
               {[
-                ["system", "System"],
-                ["light", "Light"],
-                ["dark", "Dark"],
-              ].map(([value, label]) => (
+                ["system", "System", "Matches your device"],
+                ["light", "Clean Light", "Simple and neutral"],
+                ["dark", "Clean Dark", "Low-glare minimal"],
+                ["midnight", "Midnight", "Modern deep navy"],
+                ["ocean", "Ocean", "Fresh coastal blue"],
+                ["forest", "Forest", "Calm natural green"],
+                ["warm", "Warm Paper", "Soft and comfortable"],
+                ["retro", "Retro Desk", "Cream and hard shadows"],
+                ["terminal", "Terminal", "Classic computer style"],
+                ["synthwave", "Synthwave", "Neon purple atmosphere"],
+              ].map(([value, label, description]) => (
                 <label className="setting-choice" key={value}>
                   <input type="radio" name="theme" value={value} defaultChecked={theme === value} />
-                  <span>{label}</span>
+                  <span className={`theme-preview ${value}`} aria-hidden="true"><i /><i /><i /></span>
+                  <span className="theme-copy"><strong>{label}</strong><small>{description}</small></span>
                 </label>
               ))}
             </fieldset>

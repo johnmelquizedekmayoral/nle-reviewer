@@ -1,7 +1,17 @@
 export const APPEARANCE_COOKIE = "nle-appearance";
 
 export type Appearance = {
-  theme: "light" | "dark" | "system";
+  theme:
+    | "light"
+    | "dark"
+    | "system"
+    | "midnight"
+    | "ocean"
+    | "forest"
+    | "warm"
+    | "retro"
+    | "terminal"
+    | "synthwave";
   accentColor: string;
   fontScale: number;
   reducedMotion: boolean;
@@ -19,7 +29,18 @@ export function parseAppearance(value?: string): Appearance {
   try {
     const parsed = JSON.parse(value) as Partial<Appearance>;
     return {
-      theme: ["light", "dark", "system"].includes(parsed.theme ?? "")
+      theme: [
+        "light",
+        "dark",
+        "system",
+        "midnight",
+        "ocean",
+        "forest",
+        "warm",
+        "retro",
+        "terminal",
+        "synthwave",
+      ].includes(parsed.theme ?? "")
         ? parsed.theme as Appearance["theme"]
         : defaultAppearance.theme,
       accentColor: typeof parsed.accentColor === "string" ? parsed.accentColor : "green",
