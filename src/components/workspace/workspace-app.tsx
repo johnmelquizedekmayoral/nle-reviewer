@@ -99,16 +99,32 @@ export function WorkspaceApp({ userId, role, roleCheckedAt, initialName, initial
   const refresh = useCallback(async (silent = false, includeBank = true) => {
     if (!navigator.onLine) { if (!silent) setNotice("Offline: using the latest data saved on this device."); return; }
     setSyncing(true);
-    const { data, error } = await createClient().rpc("get_workspace_bootstrap", { p_include_bank: includeBank });
-    if (error || !data) setNotice(error?.message ?? "Sync failed.");
-    else {
-      const incoming = normalizeSnapshot(data as WorkspaceSnapshot);
+    try {
+      const supabase = createClient();
+      const [workspaceResult, categoryResult] = await Promise.all([
+        supabase.rpc("get_workspace_bootstrap", { p_include_bank: includeBank }),
+        supabase.rpc("get_category_tree"),
+      ]);
+      if (workspaceResult.error || !workspaceResult.data) {
+        setNotice(`Workspace sync failed: ${workspaceResult.error?.message ?? "No data returned."}`);
+        return;
+      }
+      const incoming = normalizeSnapshot(workspaceResult.data as WorkspaceSnapshot);
+      if (categoryResult.error) {
+        setNotice(`Category sync failed: ${categoryResult.error.message}. Run migration 0011_category_tree_sync.sql.`);
+      } else if (Array.isArray(categoryResult.data)) {
+        incoming.categories = categoryResult.data as LocalCategory[];
+      }
       const cached = includeBank ? null : await readLocal<WorkspaceSnapshot>(cacheKey);
       const next = includeBank ? incoming : { ...incoming, questions: normalizeSnapshot(cached ?? incoming).questions };
       if (next.attempts.some((attempt) => attempt.status === "active")) setPanel("quiz");
-      setSnapshot(next); await writeLocal(cacheKey, next); if (!silent) setNotice("Everything is up to date.");
+      setSnapshot(next); await writeLocal(cacheKey, next);
+      if (!silent && !categoryResult.error) setNotice(`Everything is up to date. ${next.categories.length} folder(s) synced.`);
+    } catch (syncError) {
+      setNotice(syncError instanceof Error ? `Sync failed: ${syncError.message}` : "Sync failed.");
+    } finally {
+      setSyncing(false);
     }
-    setSyncing(false);
   }, [cacheKey]);
 
   useEffect(() => {

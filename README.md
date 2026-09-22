@@ -168,6 +168,15 @@ The immediate quiz result screen now includes the complete question review with 
 same All, Correct, and Wrong filters used in Quiz History, plus a Back to dashboard
 action after reviewing the completed attempt.
 
+## v13 category synchronization fix
+
+Run `supabase/migrations/0011_category_tree_sync.sql` once before deploying this
+version. Categories now synchronize through a dedicated RPC instead of depending
+only on the larger workspace bootstrap. Active categories whose old parent is
+missing or archived are recovered as roots, recursive cycles are guarded, and the
+Sync button reports the exact number of folders received. RPC failures now appear
+as a visible notification instead of leaving the old local count unexplained.
+
 ## Deploy to Vercel
 
 1. Import the `johnmelquizedekmayoral/nle-reviewer` GitHub repository in Vercel.

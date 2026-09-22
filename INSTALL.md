@@ -1,39 +1,21 @@
-# NLE Reviewer v12 update
+# NLE Reviewer v13 category sync fix
 
-This focused update adds the complete left-side Category Manager and the full
-post-quiz answer review.
+This update fixes categories that exist in Supabase but remain missing from the
+local Question Manager.
 
-## Install
+## Required order
 
-1. Extract this ZIP into the root of your `nle-reviewer` project and allow it
-   to overwrite the matching files.
-2. In the Supabase SQL Editor, run
-   `supabase/migrations/0010_category_manager.sql` once. Do this before testing
-   or deploying—the folder buttons require the new database functions.
-3. From the project folder, run:
+1. Extract this ZIP into the root of the `nle-reviewer` project and overwrite
+   the matching files.
+2. Open Supabase **SQL Editor** and run
+   `supabase/migrations/0011_category_tree_sync.sql`.
+3. Run `npm run lint` and `npm run build`.
+4. Commit and push to GitHub so Vercel deploys the update.
+5. After Vercel finishes, sign out and sign back in once.
+6. Open Question Manager and click **Sync now**.
 
-   ```bash
-   npm run lint
-   npm run build
-   ```
+The notification should report the number of synchronized folders. With the
+current `NLE 2027` root, it should say `1 folder(s) synced.`
 
-4. Commit and push the files to GitHub. Vercel will deploy the pushed commit.
-5. Reload the deployed app once after Vercel finishes.
-
-## Category Manager
-
-- The folder tree and all controls are together in the left Categories panel.
-- Use **New root** to add another top-level folder.
-- Select a folder, then use **New subfolder** to create inside it.
-- A selected folder can be renamed or moved to the root/another folder.
-- **Move folder tree** moves the folder and every descendant together.
-- **Delete folder tree** archives the branch and all contained questions. It
-  does not damage previous quiz history or saved answer snapshots.
-- Circular moves are blocked, and a folder's descendants are excluded from its
-  destination list.
-
-## Quiz results
-
-After submitting a quiz, the result screen shows the score summary and every
-question. Use **All**, **Correct**, and **Wrong** to filter the review, then use
-**Back to dashboard** when finished.
+If synchronization fails, the top-right notification now displays the exact
+RPC error and names the missing migration instead of silently showing zero.
